@@ -48,10 +48,10 @@ public final class ZaFridaSessionService implements Disposable {
         this.logWriter = writer;
 
         // show command line
-        String cmdLine = fridaCliService.buildRunCommandLine(config).getCommandLineString();
+        String cmdLine = fridaCliService.buildRunCommandLine(project, config).getCommandLineString();
         info.accept("[ZAFrida] Command: " + cmdLine);
 
-        ProcessHandler handler = fridaCliService.createRunProcessHandler(config);
+        ProcessHandler handler = fridaCliService.createRunProcessHandler(project, config);
 
         SessionLogWriter finalWriter = writer;
         handler.addProcessListener(new ProcessAdapter() {

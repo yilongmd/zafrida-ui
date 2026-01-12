@@ -10,11 +10,14 @@ import com.intellij.ui.components.JBTextField;
 import com.zafrida.ui.frida.*;
 import com.zafrida.ui.session.RunningSession;
 import com.zafrida.ui.session.ZaFridaSessionService;
+import com.zafrida.ui.python.ProjectPythonEnvResolver;
+import com.zafrida.ui.python.PythonEnvInfo;
 import com.zafrida.ui.ui.render.DeviceCellRenderer;
 import com.zafrida.ui.ui.render.ProcessCellRenderer;
 import com.zafrida.ui.util.ProjectFileUtil;
 import com.zafrida.ui.util.ZaFridaNotifier;
 import com.zafrida.ui.settings.ZaFridaSettingsService;
+import com.zafrida.ui.settings.ZaFridaSettingsState;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,6 +34,7 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,7 +50,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final ComboBox<FridaDevice> deviceCombo = new ComboBox<>();
     private final JButton refreshDevicesBtn = new JButton("Refresh");
     private final JButton addRemoteBtn = new JButton("+Remote");
-    // private final JButton addRemoteBtn = new JButton("+Remote");
 
     private final ComboBox<FridaProcessScope> scopeCombo = new ComboBox<>(FridaProcessScope.values());
     private final ComboBox<FridaProcess> processCombo = new ComboBox<>();
@@ -69,6 +72,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final JLabel logFileLabel = new JLabel("Log: (not started)");
 
     private @Nullable VirtualFile scriptFile;
+
+    private boolean printedToolchainInfo = false;
 
     public ZaFridaRunPanel(@NotNull Project project,
                            @NotNull ZaFridaConsolePanel consolePanel,
@@ -241,16 +246,50 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    private void printToolchainInfoOnce() {
+        if (printedToolchainInfo) return;
+        printedToolchainInfo = true;
+
+        PythonEnvInfo env = ProjectPythonEnvResolver.resolve(project);
+        if (env == null) {
+            consolePanel.warn("[ZAFrida] Project Python interpreter env not detected. Using IDE/system PATH for frida-tools.");
+            return;
+        }
+
+        consolePanel.info("[ZAFrida] Project Python: " + env.getPythonHome());
+        if (!env.getPathEntries().isEmpty()) {
+            consolePanel.info("[ZAFrida] Project PATH prepend: " + String.join(File.pathSeparator, env.getPathEntries()));
+        }
+
+        ZaFridaSettingsState st = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class).getState();
+        String ls = ProjectPythonEnvResolver.findTool(env, st.fridaLsDevicesExecutable);
+        String ps = ProjectPythonEnvResolver.findTool(env, st.fridaPsExecutable);
+        String frida = ProjectPythonEnvResolver.findTool(env, st.fridaExecutable);
+
+        if (ls != null) {
+            consolePanel.info("[ZAFrida] Resolved frida-ls-devices: " + ls);
+        } else {
+            consolePanel.warn("[ZAFrida] frida-ls-devices not found in project interpreter; will fallback to system PATH if available.");
+        }
+        if (ps != null) {
+            consolePanel.info("[ZAFrida] Resolved frida-ps: " + ps);
+        }
+        if (frida != null) {
+            consolePanel.info("[ZAFrida] Resolved frida: " + frida);
+        }
+    }
+
     private void reloadDevicesAsync() {
         disableControls(true);
+        printToolchainInfoOnce();
         consolePanel.info("[ZAFrida] Loading devices...");
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                List<FridaDevice> devices = new ArrayList<>(fridaCli.listDevices());
+                List<FridaDevice> devices = new ArrayList<>(fridaCli.listDevices(project));
                 // add remotes from settings
                 var remotes = ApplicationManager.getApplication()
-                        .getService(com.zafrida.ui.settings.ZaFridaSettingsService.class)
+                        .getService(ZaFridaSettingsService.class)
                         .getRemoteHosts();
                 for (String host : remotes) {
                     devices.add(new FridaDevice("remote:" + host, "remote", "Remote", FridaDeviceMode.HOST, host));
@@ -285,7 +324,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 FridaProcessScope scope = (FridaProcessScope) scopeCombo.getSelectedItem();
                 if (scope == null) scope = FridaProcessScope.RUNNING_APPS;
 
-                List<FridaProcess> ps = fridaCli.listProcesses(dev, scope);
+                List<FridaProcess> ps = fridaCli.listProcesses(project, dev, scope);
 
                 ApplicationManager.getApplication().invokeLater(() -> {
                     processCombo.removeAllItems();

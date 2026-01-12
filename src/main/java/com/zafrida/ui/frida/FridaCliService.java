@@ -7,6 +7,9 @@ import com.intellij.execution.process.CapturingProcessHandler;
 import com.intellij.execution.process.OSProcessHandler;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.zafrida.ui.python.ProjectPythonEnvResolver;
+import com.zafrida.ui.python.PythonEnvInfo;
 import com.zafrida.ui.settings.ZaFridaSettingsService;
 import com.zafrida.ui.settings.ZaFridaSettingsState;
 import org.jetbrains.annotations.NotNull;
@@ -25,22 +28,26 @@ public final class FridaCliService {
         this.settings = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
     }
 
-    public @NotNull List<FridaDevice> listDevices() {
-        GeneralCommandLine cmd = buildLsDevicesCommandLine();
+    public @NotNull List<FridaDevice> listDevices(@NotNull Project project) {
+        GeneralCommandLine cmd = buildLsDevicesCommandLine(project);
         CapturedOut out = runCapturing(cmd, 15_000);
         return FridaOutputParsers.parseDevices(out.stdout);
     }
 
-    public @NotNull List<FridaProcess> listProcesses(@NotNull FridaDevice device, @NotNull FridaProcessScope scope) {
-        GeneralCommandLine cmd = buildPsCommandLine(device, scope);
+    public @NotNull List<FridaProcess> listProcesses(@NotNull Project project,
+                                                     @NotNull FridaDevice device,
+                                                     @NotNull FridaProcessScope scope) {
+        GeneralCommandLine cmd = buildPsCommandLine(project, device, scope);
         CapturedOut out = runCapturing(cmd, 20_000);
         return FridaOutputParsers.parseProcesses(out.stdout);
     }
 
-    public @NotNull GeneralCommandLine buildRunCommandLine(@NotNull FridaRunConfig config) {
+    public @NotNull GeneralCommandLine buildRunCommandLine(@NotNull Project project, @NotNull FridaRunConfig config) {
         ZaFridaSettingsState s = settings.getState();
         GeneralCommandLine cmd = new GeneralCommandLine(s.fridaExecutable)
                 .withCharset(StandardCharsets.UTF_8);
+
+        applyProjectPythonEnv(project, cmd);
 
         addDeviceArgs(cmd, config.getDevice());
 
@@ -71,24 +78,30 @@ public final class FridaCliService {
         return cmd;
     }
 
-    public @NotNull OSProcessHandler createRunProcessHandler(@NotNull FridaRunConfig config) {
+    public @NotNull OSProcessHandler createRunProcessHandler(@NotNull Project project, @NotNull FridaRunConfig config) {
         try {
-            return new OSProcessHandler(buildRunCommandLine(config));
+            return new OSProcessHandler(buildRunCommandLine(project, config));
         } catch (ExecutionException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private @NotNull GeneralCommandLine buildLsDevicesCommandLine() {
+    private @NotNull GeneralCommandLine buildLsDevicesCommandLine(@NotNull Project project) {
         ZaFridaSettingsState s = settings.getState();
-        return new GeneralCommandLine(s.fridaLsDevicesExecutable)
+        GeneralCommandLine cmd = new GeneralCommandLine(s.fridaLsDevicesExecutable)
                 .withCharset(StandardCharsets.UTF_8);
+        applyProjectPythonEnv(project, cmd);
+        return cmd;
     }
 
-    private @NotNull GeneralCommandLine buildPsCommandLine(@NotNull FridaDevice device, @NotNull FridaProcessScope scope) {
+    private @NotNull GeneralCommandLine buildPsCommandLine(@NotNull Project project,
+                                                           @NotNull FridaDevice device,
+                                                           @NotNull FridaProcessScope scope) {
         ZaFridaSettingsState s = settings.getState();
         GeneralCommandLine cmd = new GeneralCommandLine(s.fridaPsExecutable)
                 .withCharset(StandardCharsets.UTF_8);
+
+        applyProjectPythonEnv(project, cmd);
 
         addDeviceArgs(cmd, device);
 
@@ -101,6 +114,15 @@ public final class FridaCliService {
         }
 
         return cmd;
+    }
+
+    private void applyProjectPythonEnv(@NotNull Project project, @NotNull GeneralCommandLine cmd) {
+        // Make sure we inherit the parent environment, then prepend the project interpreter's PATH.
+        cmd.withParentEnvironmentType(GeneralCommandLine.ParentEnvironmentType.CONSOLE);
+        PythonEnvInfo env = ProjectPythonEnvResolver.resolve(project);
+        if (env != null) {
+            ProjectPythonEnvResolver.applyToCommandLine(cmd, env);
+        }
     }
 
     private void addDeviceArgs(@NotNull GeneralCommandLine cmd, @NotNull FridaDevice device) {
@@ -141,17 +163,5 @@ public final class FridaCliService {
         }
 
         return new CapturedOut(stdout, stderr, exitCode);
-    }
-
-    private static final class CapturedOut {
-        final String stdout;
-        final String stderr;
-        final int exitCode;
-
-        CapturedOut(String stdout, String stderr, int exitCode) {
-            this.stdout = stdout;
-            this.stderr = stderr;
-            this.exitCode = exitCode;
-        }
     }
 }

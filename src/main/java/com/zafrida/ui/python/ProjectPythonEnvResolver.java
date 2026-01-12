@@ -19,6 +19,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
+import com.intellij.openapi.roots.ModuleRootManager;
+
+
 /**
  * Resolve the project's selected Python interpreter environment and apply it to a command line.
  *
@@ -39,8 +44,9 @@ public final class ProjectPythonEnvResolver {
 
     public static @Nullable PythonEnvInfo resolve(@NotNull Project project) {
         try {
-            Sdk sdk = ProjectRootManager.getInstance(project).getProjectSdk();
+            Sdk sdk = findPythonSdk(project);
             if (sdk == null) return null;
+
             String homePath = sdk.getHomePath();
             if (homePath == null || homePath.trim().isEmpty()) return null;
 
@@ -61,6 +67,70 @@ public final class ProjectPythonEnvResolver {
             return null;
         }
     }
+
+    /**
+     * In PyCharm, the Python interpreter is often stored as Module SDK rather than Project SDK.
+     * So we try:
+     * 1) Project SDK
+     * 2) Each Module SDK
+     */
+    private static @Nullable Sdk findPythonSdk(@NotNull Project project) {
+        // 1) project sdk
+        Sdk projectSdk = ProjectRootManager.getInstance(project).getProjectSdk();
+        if (looksLikePythonSdk(projectSdk)) {
+            return projectSdk;
+        }
+
+        // 2) module sdk
+        Module[] modules = ModuleManager.getInstance(project).getModules();
+        for (Module m : modules) {
+            Sdk moduleSdk = ModuleRootManager.getInstance(m).getSdk();
+            if (looksLikePythonSdk(moduleSdk)) {
+                return moduleSdk;
+            }
+        }
+
+        // fallback: if projectSdk exists but doesn't look like python (rare in PyCharm), still return it
+        if (projectSdk != null && projectSdk.getHomePath() != null && !projectSdk.getHomePath().isBlank()) {
+            return projectSdk;
+        }
+
+        // fallback: first non-null module sdk
+        for (Module m : modules) {
+            Sdk moduleSdk = ModuleRootManager.getInstance(m).getSdk();
+            if (moduleSdk != null && moduleSdk.getHomePath() != null && !moduleSdk.getHomePath().isBlank()) {
+                return moduleSdk;
+            }
+        }
+
+        return null;
+    }
+
+    private static boolean looksLikePythonSdk(@Nullable Sdk sdk) {
+        if (sdk == null) return false;
+
+        String home = sdk.getHomePath();
+        if (home == null || home.isBlank()) return false;
+
+        // Prefer SDK type name when available
+        try {
+            String typeName = sdk.getSdkType().getName();
+            if (typeName != null && typeName.toLowerCase(Locale.ROOT).contains("python")) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        // Fallback: check executable file name
+        try {
+            String fileName = Paths.get(home).getFileName().toString().toLowerCase(Locale.ROOT);
+            return fileName.startsWith("python") || fileName.startsWith("pypy");
+        } catch (Throwable ignored) {
+            String lower = home.toLowerCase(Locale.ROOT);
+            return lower.contains("/python") || lower.contains("\\python") || lower.contains("pypy");
+        }
+    }
+
 
     private static @NotNull PythonEnvInfo buildFromPythonHome(@NotNull Path pythonHome) {
         boolean windows = SystemInfoRt.isWindows;
