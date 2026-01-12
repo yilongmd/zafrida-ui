@@ -7,10 +7,14 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.icons.AllIcons;
 import com.intellij.ui.TitledSeparator;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.text.StringUtil;
+import com.zafrida.ui.fridaproject.ZaFridaPlatform;
 import com.zafrida.ui.templates.TemplateScriptManipulator;
 import com.zafrida.ui.templates.ZaFridaScriptSkeleton;
 import com.zafrida.ui.templates.ZaFridaTemplate;
@@ -45,30 +49,41 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
     private final JButton createScriptBtn = new JButton("New Script");
     private final JButton installTypingsBtn = new JButton("Install Typings");
     private final JButton refreshBtn = new JButton("Refresh");
+    private final JButton addTemplateBtn = new JButton("Add Template");
+    private final JButton removeTemplateBtn = new JButton("Remove Template");
 
     private final JPanel templatesContainer = new JPanel();
     private final Map<String, JBCheckBox> checkBoxes = new LinkedHashMap<>();
 
     private @Nullable VirtualFile currentScript;
+    private @Nullable ZaFridaPlatform currentPlatform;
 
     public ZaFridaTemplatePanel(@NotNull Project project) {
         super(new BorderLayout());
         this.project = project;
-        this.templateService = ApplicationManager.getApplication().getService(ZaFridaTemplateService.class);
+        this.templateService = project.getService(ZaFridaTemplateService.class);
 
         scriptField.setEditable(false);
+        scriptField.setColumns(22);
+        chooseScriptBtn.setIcon(AllIcons.Actions.Open);
+        createScriptBtn.setIcon(AllIcons.Actions.NewFolder);
+        installTypingsBtn.setIcon(AllIcons.Actions.Download);
+        refreshBtn.setIcon(AllIcons.Actions.Refresh);
+        addTemplateBtn.setIcon(AllIcons.General.Add);
+        removeTemplateBtn.setIcon(AllIcons.General.Remove);
 
         JPanel header = new JPanel(new BorderLayout(8, 0));
 
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         left.add(new JLabel("Script:"));
-        scriptField.setColumns(28);
         left.add(scriptField);
         left.add(chooseScriptBtn);
         left.add(createScriptBtn);
         left.add(installTypingsBtn);
 
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
+        right.add(addTemplateBtn);
+        right.add(removeTemplateBtn);
         right.add(refreshBtn);
 
         header.add(left, BorderLayout.WEST);
@@ -91,6 +106,12 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         updateCheckboxState();
     }
 
+    public void setCurrentPlatform(@Nullable ZaFridaPlatform platform) {
+        this.currentPlatform = platform;
+        buildTemplatesUI();
+        updateCheckboxState();
+    }
+
     public @Nullable VirtualFile getCurrentScriptFile() {
         return currentScript;
     }
@@ -99,8 +120,10 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         templatesContainer.removeAll();
         checkBoxes.clear();
 
+        List<ZaFridaTemplate> all = filterTemplatesForPlatform(templateService.all());
+
         Map<ZaFridaTemplateCategory, List<ZaFridaTemplate>> grouped = new EnumMap<>(ZaFridaTemplateCategory.class);
-        for (ZaFridaTemplate t : templateService.all()) {
+        for (ZaFridaTemplate t : all) {
             grouped.computeIfAbsent(t.getCategory(), k -> new ArrayList<>()).add(t);
         }
 
@@ -144,7 +167,14 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
 
         installTypingsBtn.addActionListener(e -> TypingsInstaller.install(project));
 
-        refreshBtn.addActionListener(e -> updateCheckboxState());
+        refreshBtn.addActionListener(e -> {
+            templateService.reload();
+            buildTemplatesUI();
+            updateCheckboxState();
+        });
+
+        addTemplateBtn.addActionListener(e -> onAddTemplate());
+        removeTemplateBtn.addActionListener(e -> onRemoveTemplate());
     }
 
     private void updateCheckboxState() {
@@ -191,6 +221,92 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
             FileDocumentManager.getInstance().saveDocument(doc);
         });
         updateCheckboxState();
+    }
+
+    private void onAddTemplate() {
+        List<ZaFridaTemplateCategory> categories = allowedCategories();
+        if (categories.isEmpty()) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "No template categories available");
+            return;
+        }
+
+        String[] options = categories.stream().map(Enum::name).toArray(String[]::new);
+        String chosen = Messages.showChooseDialog(project, "Select template category", "Add Template", options, options[0], null);
+        if (chosen == null) return;
+
+        ZaFridaTemplateCategory category = ZaFridaTemplateCategory.valueOf(chosen);
+        String name = Messages.showInputDialog(project, "Template file name (no .js)", "Add Template", null);
+        if (StringUtil.isEmptyOrSpaces(name)) return;
+
+        String content = Messages.showMultilineInputDialog(project, "Template JS content", "Add Template", "", null, null);
+        if (content == null) return;
+
+        boolean created = templateService.addTemplate(category, name, content);
+        if (!created) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "Failed to add template. Duplicate name or invalid file.");
+            return;
+        }
+
+        buildTemplatesUI();
+        updateCheckboxState();
+    }
+
+    private void onRemoveTemplate() {
+        List<ZaFridaTemplate> list = filterTemplatesForPlatform(templateService.all());
+        if (list.isEmpty()) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "No templates to remove");
+            return;
+        }
+
+        String[] options = list.stream().map(ZaFridaTemplate::getTitle).toArray(String[]::new);
+        String chosen = Messages.showChooseDialog(project, "Select template to remove", "Remove Template", options, options[0], null);
+        if (chosen == null) return;
+
+        ZaFridaTemplate target = list.stream()
+                .filter(t -> t.getTitle().equals(chosen))
+                .findFirst()
+                .orElse(null);
+        if (target == null) return;
+
+        int confirm = Messages.showYesNoDialog(project,
+                "Delete template file?\n" + target.getTitle(),
+                "Remove Template",
+                null);
+        if (confirm != Messages.YES) return;
+
+        boolean deleted = templateService.deleteTemplate(target);
+        if (!deleted) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "Failed to delete template.");
+            return;
+        }
+
+        buildTemplatesUI();
+        updateCheckboxState();
+    }
+
+    private @NotNull List<ZaFridaTemplateCategory> allowedCategories() {
+        List<ZaFridaTemplateCategory> categories = new ArrayList<>();
+        if (currentPlatform == ZaFridaPlatform.ANDROID) {
+            categories.add(ZaFridaTemplateCategory.ANDROID);
+        } else if (currentPlatform == ZaFridaPlatform.IOS) {
+            categories.add(ZaFridaTemplateCategory.IOS);
+        } else {
+            categories.add(ZaFridaTemplateCategory.ANDROID);
+            categories.add(ZaFridaTemplateCategory.IOS);
+        }
+        categories.add(ZaFridaTemplateCategory.NATIVE);
+        categories.add(ZaFridaTemplateCategory.UTILS);
+        return categories;
+    }
+
+    private @NotNull List<ZaFridaTemplate> filterTemplatesForPlatform(@NotNull List<ZaFridaTemplate> templates) {
+        List<ZaFridaTemplate> filtered = new ArrayList<>();
+        for (ZaFridaTemplate t : templates) {
+            if (currentPlatform == ZaFridaPlatform.ANDROID && t.getCategory() == ZaFridaTemplateCategory.IOS) continue;
+            if (currentPlatform == ZaFridaPlatform.IOS && t.getCategory() == ZaFridaTemplateCategory.ANDROID) continue;
+            filtered.add(t);
+        }
+        return filtered;
     }
 
     @Override

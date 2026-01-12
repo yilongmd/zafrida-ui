@@ -1,5 +1,6 @@
 package com.zafrida.ui.fridaproject.ui;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
@@ -49,6 +50,7 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         this.projectManager = projectManager;
         this.fridaCliService = fridaCliService;
         this.deviceSupplier = deviceSupplier;
+        refreshTargetsBtn.setIcon(AllIcons.Actions.Refresh);
         setTitle("ZAFrida Project Settings");
         setOKButtonText("Save");
         init();

@@ -31,8 +31,7 @@
 
         <applicationService serviceImplementation="com.zafrida.ui.settings.ZaFridaSettingsService"/>
         <applicationService serviceImplementation="com.zafrida.ui.frida.FridaCliService"/>
-        <applicationService serviceImplementation="com.zafrida.ui.templates.ZaFridaTemplateService"/>
-
+        <projectService serviceImplementation="com.zafrida.ui.templates.ZaFridaTemplateService"/>
         <projectService serviceImplementation="com.zafrida.ui.session.ZaFridaSessionService"/>
 
         <applicationConfigurable

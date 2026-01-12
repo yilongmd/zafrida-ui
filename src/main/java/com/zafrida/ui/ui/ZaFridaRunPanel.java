@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.IconLoader;
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.components.JBTextField;
 import com.zafrida.ui.frida.*;
@@ -113,7 +114,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         row = addRow(form, row, new JLabel("Extra"), buildExtraRow());
         row = addRow(form, row, new JLabel(""), buildButtonsRow());
 
-        add(form, BorderLayout.NORTH);
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(buildTopActionRow(), BorderLayout.NORTH);
+        top.add(form, BorderLayout.CENTER);
+        add(top, BorderLayout.NORTH);
         add(logFileLabel, BorderLayout.SOUTH);
 
         initUiState();
@@ -134,14 +138,28 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         group.add(spawnRadio);
         group.add(attachRadio);
 
-        targetField.setColumns(28);
-        extraArgsField.setColumns(28);
+        targetField.setColumns(18);
+        extraArgsField.setColumns(18);
         languageToggleBtn.setToolTipText("中文 / English");
+
+        refreshDevicesBtn.setIcon(AllIcons.Actions.Refresh);
+        addRemoteBtn.setIcon(AllIcons.General.Add);
+        chooseScriptBtn.setIcon(AllIcons.Actions.Open);
+        runBtn.setIcon(AllIcons.Actions.Execute);
+        stopBtn.setIcon(AllIcons.Actions.Suspend);
+        clearConsoleBtn.setIcon(AllIcons.Actions.Clean);
+        newFridaProjectBtn.setIcon(AllIcons.Actions.NewFolder);
+        projectSettingsBtn.setIcon(AllIcons.General.Settings);
     }
 
     private JPanel buildFridaProjectRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         row.add(fridaProjectSelector);
+        return row;
+    }
+
+    private JPanel buildTopActionRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         row.add(newFridaProjectBtn);
         row.add(projectSettingsBtn);
         row.add(languageToggleBtn);
@@ -239,6 +257,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             updatingFridaProjectSelector = false;
         }
 
+        templatePanel.setCurrentPlatform(active == null ? null : active.getPlatform());
+
         if (active == null) {
             // 不强制清空，让用户仍可用“自由脚本模式”
             return;
@@ -320,7 +340,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private JPanel buildScriptRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        scriptField.setColumns(32);
+        scriptField.setColumns(22);
         p.add(scriptField);
         p.add(chooseScriptBtn);
         return p;

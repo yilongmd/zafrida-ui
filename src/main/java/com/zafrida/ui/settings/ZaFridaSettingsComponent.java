@@ -1,5 +1,6 @@
 package com.zafrida.ui.settings;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
@@ -31,6 +32,9 @@ public final class ZaFridaSettingsComponent {
     private final JComponent panel;
 
     public ZaFridaSettingsComponent() {
+        addRemoteBtn.setIcon(AllIcons.General.Add);
+        removeRemoteBtn.setIcon(AllIcons.General.Remove);
+
         JPanel remoteButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         remoteButtons.add(addRemoteBtn);
         remoteButtons.add(removeRemoteBtn);
