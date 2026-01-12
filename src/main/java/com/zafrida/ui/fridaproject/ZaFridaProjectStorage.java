@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.zafrida.ui.frida.FridaProcessScope;
 import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.input.SAXBuilder;
@@ -115,6 +116,9 @@ public final class ZaFridaProjectStorage {
         cfg.platform = ZaFridaPlatform.valueOf(root.getAttributeValue("platform", "ANDROID"));
         cfg.mainScript = root.getAttributeValue("mainScript", ZaFridaProjectFiles.DEFAULT_MAIN_SCRIPT);
         cfg.lastTarget = root.getAttributeValue("lastTarget");
+        cfg.processScope = FridaProcessScope.valueOf(
+                root.getAttributeValue("processScope", FridaProcessScope.RUNNING_APPS.name())
+        );
         return cfg;
     }
 
@@ -125,6 +129,7 @@ public final class ZaFridaProjectStorage {
         root.setAttribute("platform", cfg.platform.name());
         root.setAttribute("mainScript", cfg.mainScript);
         if (cfg.lastTarget != null) root.setAttribute("lastTarget", cfg.lastTarget);
+        root.setAttribute("processScope", cfg.processScope.name());
         return new XMLOutputter(Format.getPrettyFormat()).outputString(new Document(root));
     }
 

@@ -1,5 +1,6 @@
 package com.zafrida.ui.fridaproject;
 
+import com.zafrida.ui.frida.FridaProcessScope;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,4 +15,6 @@ public final class ZaFridaProjectConfig {
 
     // 上次调试目标（Android package / iOS bundle）
     public @Nullable String lastTarget = null;
+
+    public @NotNull FridaProcessScope processScope = FridaProcessScope.RUNNING_APPS;
 }
