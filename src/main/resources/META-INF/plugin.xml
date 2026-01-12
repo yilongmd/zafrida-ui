@@ -39,5 +39,18 @@
                 id="com.zafrida.ui.settings"
                 displayName="ZAFrida"
                 instance="com.zafrida.ui.settings.ZaFridaSettingsConfigurable"/>
+
+        <projectService serviceImplementation="com.zafrida.ui.fridaproject.ZaFridaProjectManager"/>
+
+
     </extensions>
+
+    <actions>
+        <action id="ZAFrida.LoadProjectFromFolder"
+                class="com.zafrida.ui.fridaproject.actions.LoadZaFridaProjectFromFolderAction"
+                text="Load to ZAFrida"
+                description="Load selected folder as a ZAFrida Frida project">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
 </idea-plugin>

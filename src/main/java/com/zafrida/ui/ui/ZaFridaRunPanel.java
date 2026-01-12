@@ -2,16 +2,20 @@ package com.zafrida.ui.ui;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.fileChooser.FileChooser;
+import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.components.JBTextField;
 import com.zafrida.ui.frida.*;
+import com.zafrida.ui.fridaproject.*;
 import com.zafrida.ui.session.RunningSession;
 import com.zafrida.ui.session.ZaFridaSessionService;
 import com.zafrida.ui.python.ProjectPythonEnvResolver;
 import com.zafrida.ui.python.PythonEnvInfo;
+import com.zafrida.ui.ui.components.SearchableComboBoxPanel;
 import com.zafrida.ui.ui.render.DeviceCellRenderer;
 import com.zafrida.ui.ui.render.ProcessCellRenderer;
 import com.zafrida.ui.util.ProjectFileUtil;
@@ -37,6 +41,7 @@ import java.awt.Insets;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import com.intellij.openapi.util.text.StringUtil;
 
 public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
@@ -75,6 +80,13 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private boolean printedToolchainInfo = false;
 
+    private final ZaFridaProjectManager fridaProjectManager;
+    private final SearchableComboBoxPanel<ZaFridaFridaProject> fridaProjectSelector =
+            new SearchableComboBoxPanel<>(p -> p == null ? "" : p.getName());
+    private final JButton newFridaProjectBtn = new JButton("New Project");
+    private boolean updatingFridaProjectSelector = false;
+
+
     public ZaFridaRunPanel(@NotNull Project project,
                            @NotNull ZaFridaConsolePanel consolePanel,
                            @NotNull ZaFridaTemplatePanel templatePanel) {
@@ -85,6 +97,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         this.fridaCli = ApplicationManager.getApplication().getService(FridaCliService.class);
         this.sessionService = project.getService(ZaFridaSessionService.class);
+        this.fridaProjectManager = project.getService(ZaFridaProjectManager.class);
+
 
         JPanel form = new JPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
@@ -93,6 +107,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         c.weightx = 1;
 
         int row = 0;
+        row = addRow(form, row, new JLabel("Project"), buildFridaProjectRow());
         row = addRow(form, row, new JLabel("Device"), buildDeviceRow());
         row = addRow(form, row, new JLabel("Scope"), buildProcessRow());
         row = addRow(form, row, new JLabel("Script"), buildScriptRow());
@@ -105,6 +120,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         initUiState();
         bindActions();
+        subscribeToFridaProjectChanges();
+        reloadFridaProjectsIntoUi();
+        applyActiveFridaProjectToUi(fridaProjectManager.getActiveProject());
         reloadDevicesAsync();
     }
 
@@ -122,6 +140,13 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         scopeCombo.setSelectedItem(FridaProcessScope.RUNNING_APPS);
         targetField.setColumns(28);
         extraArgsField.setColumns(28);
+    }
+
+    private JPanel buildFridaProjectRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        row.add(fridaProjectSelector);
+        row.add(newFridaProjectBtn);
+        return row;
     }
 
     private void bindActions() {
@@ -144,18 +169,156 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         spawnRadio.addActionListener(e -> onProcessSelected());
         attachRadio.addActionListener(e -> onProcessSelected());
 
-        chooseScriptBtn.addActionListener(e -> {
-            VirtualFile file = ProjectFileUtil.chooseJavaScriptFile(project);
-            if (file != null) {
-                setScriptFile(file);
-            }
-        });
-
         clearConsoleBtn.addActionListener(e -> consolePanel.clear());
 
         runBtn.addActionListener(e -> runFrida());
         stopBtn.addActionListener(e -> stopFrida());
+
+        fridaProjectSelector.addActionListener(e -> {
+            if (updatingFridaProjectSelector) return;
+            fridaProjectManager.setActiveProject(fridaProjectSelector.getSelectedItem());
+        });
+        newFridaProjectBtn.addActionListener(e -> createNewFridaProject());
+        chooseScriptBtn.addActionListener(e -> {
+            ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
+            VirtualFile initial = active != null ? fridaProjectManager.resolveProjectDir(active) : null;
+
+            VirtualFile file = null;
+            if (initial != null) {
+                FileChooserDescriptor d = new FileChooserDescriptor(true, false, false, false, false, false);
+                d.withFileFilter(vf -> "js".equalsIgnoreCase(vf.getExtension()));
+                file = FileChooser.chooseFile(d, project, initial);
+            }
+            if (file == null) file = ProjectFileUtil.chooseJavaScriptFile(project);
+            if (file == null) return;
+
+            setScriptFile(file);
+
+            if (active != null) {
+                String rel = fridaProjectManager.toProjectRelativePath(active, file);
+                if (rel != null) fridaProjectManager.updateProjectConfig(active, c -> c.mainScript = rel);
+            }
+        });
+
     }
+
+    private void subscribeToFridaProjectChanges() {
+        // 用面板本身作为 Disposable，IDE 关闭 ToolWindow 时会自动断开订阅
+        project.getMessageBus().connect(this).subscribe(ZaFridaProjectManager.TOPIC, new ZaFridaProjectListener() {
+            @Override
+            public void onActiveProjectChanged(@Nullable ZaFridaFridaProject newProject) {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    // 项目列表可能被新增/导入，所以这里顺手刷新 selector items
+                    reloadFridaProjectsIntoUi();
+                    applyActiveFridaProjectToUi(newProject);
+
+                    // 切项目后：刷新 targets，并尝试匹配该项目保存的 lastTarget
+                    reloadProcessesAsync();
+                });
+            }
+        });
+    }
+    private void reloadFridaProjectsIntoUi() {
+        updatingFridaProjectSelector = true;
+        try {
+            List<ZaFridaFridaProject> list = fridaProjectManager.listProjects();
+            fridaProjectSelector.setItems(list);
+            fridaProjectSelector.setSelectedItem(fridaProjectManager.getActiveProject());
+
+            // 没有项目时，禁用一些按钮（可选）
+            boolean has = !list.isEmpty();
+            fridaProjectSelector.setEnabled(true);
+            newFridaProjectBtn.setEnabled(true);
+
+            if (!has) {
+                // 这里不强制清空脚本/target，避免用户临时用“无项目模式”
+            }
+        } finally {
+            updatingFridaProjectSelector = false;
+        }
+    }
+    private void applyActiveFridaProjectToUi(@Nullable ZaFridaFridaProject active) {
+        updatingFridaProjectSelector = true;
+        try {
+            fridaProjectSelector.setSelectedItem(active);
+        } finally {
+            updatingFridaProjectSelector = false;
+        }
+
+        if (active == null) {
+            // 不强制清空，让用户仍可用“自由脚本模式”
+            return;
+        }
+
+        ZaFridaProjectConfig cfg = fridaProjectManager.loadProjectConfig(active);
+
+        // 1) 恢复 lastTarget（只对 Spawn 有意义）
+        if (spawnRadio.isSelected() && !StringUtil.isEmptyOrSpaces(cfg.lastTarget)) {
+            targetField.setText(cfg.lastTarget);
+        }
+
+        // 2) 恢复 mainScript（项目内相对路径）
+        VirtualFile dir = fridaProjectManager.resolveProjectDir(active);
+        if (dir != null) {
+            String rel = cfg.mainScript;
+            if (!StringUtil.isEmptyOrSpaces(rel)) {
+                VirtualFile f = dir.findFileByRelativePath(rel);
+                if (f != null && !f.isDirectory()) {
+                    setScriptFile(f);
+                } else {
+                    // mainScript 丢失时给个提示，不强制创建，避免误操作
+                    consolePanel.warn("[ZAFrida] Main script not found in project: " + rel);
+                }
+            }
+        }
+    }
+    private void createNewFridaProject() {
+        String name = Messages.showInputDialog(
+                project,
+                "Frida project name:",
+                "Create ZAFrida Project",
+                null
+        );
+        if (name == null) return;
+
+        name = name.trim();
+        if (name.isEmpty()) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "Project name is empty");
+            return;
+        }
+
+        String[] options = new String[]{"Android", "iOS"};
+
+        // 这个 API 版本最稳：返回点击按钮的 index（0..n-1），关闭窗口可能返回 -1
+        int idx = Messages.showDialog(
+                project,
+                "Select platform:",
+                "Create ZAFrida Project",
+                options,
+                0,
+                null
+        );
+        if (idx < 0 || idx >= options.length) return;
+
+        ZaFridaPlatform platform = (idx == 1) ? ZaFridaPlatform.IOS : ZaFridaPlatform.ANDROID;
+
+        try {
+            ZaFridaFridaProject created = fridaProjectManager.createAndActivate(name, platform);
+
+            reloadFridaProjectsIntoUi();
+            applyActiveFridaProjectToUi(created);
+
+            consolePanel.info("[ZAFrida] Created project: " + created.getName() + " (" + created.getRelativeDir() + ")");
+        } catch (Throwable t) {
+            consolePanel.error("[ZAFrida] Create project failed: " + t.getMessage());
+            ZaFridaNotifier.error(project, "ZAFrida", "Create project failed: " + t.getMessage());
+        }
+    }
+
+
+
+
+
 
     private JPanel buildDeviceRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -333,6 +496,28 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                     consolePanel.info("[ZAFrida] Targets loaded: " + ps.size());
                     disableProcesses(false);
                     onProcessSelected();
+
+                    String savedTarget = null;
+                    ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
+                    if (active != null) savedTarget = fridaProjectManager.loadProjectConfig(active).lastTarget;
+
+                    boolean matched = false;
+                    if (spawnRadio.isSelected() && !StringUtil.isEmptyOrSpaces(savedTarget)) {
+                        for (int i = 0; i < ps.size(); i++) {
+                            FridaProcess p = ps.get(i);
+                            if (savedTarget.equals(p.getIdentifier()) || savedTarget.equals(p.getName())) {
+                                processCombo.setSelectedIndex(i);
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!matched && !ps.isEmpty()) processCombo.setSelectedIndex(0);
+                    onProcessSelected();
+                    if (spawnRadio.isSelected() && !matched && !StringUtil.isEmptyOrSpaces(savedTarget)) {
+                        targetField.setText(savedTarget);
+                    }
+
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() -> {
@@ -349,18 +534,58 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             ZaFridaNotifier.warn(project, "ZAFrida", "No device selected");
             return;
         }
-        VirtualFile script = scriptFile != null ? scriptFile : templatePanel.getCurrentScriptFile();
-        if (script == null) {
-            ZaFridaNotifier.warn(project, "ZAFrida", "Choose a script file first");
-            return;
-        }
 
+        // 1) 先统一拿到 target（spawn=包名/进程名，attach=pid 字符串）
         String target = targetField.getText() != null ? targetField.getText().trim() : "";
         if (target.isEmpty()) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Target is empty");
             return;
         }
 
+        ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
+
+        // 2) 脚本选择优先级：
+        //    a) 用户手动选过的 scriptFile
+        //    b) templatePanel 当前脚本
+        //    c) active 项目配置里的 mainScript
+        //    d) spawn 模式：根据 target 自动生成默认主脚本
+        VirtualFile script = scriptFile != null ? scriptFile : templatePanel.getCurrentScriptFile();
+
+        if (script == null && active != null) {
+            ZaFridaProjectConfig pc = fridaProjectManager.loadProjectConfig(active);
+            VirtualFile dir = fridaProjectManager.resolveProjectDir(active);
+            if (dir != null && pc != null && !StringUtil.isEmptyOrSpaces(pc.mainScript)) {
+                VirtualFile cand = dir.findFileByRelativePath(pc.mainScript);
+                if (cand != null && !cand.isDirectory()) {
+                    setScriptFile(cand);
+                    script = cand;
+                }
+            }
+        }
+
+        if (script == null && active != null && spawnRadio.isSelected()) {
+            VirtualFile auto = fridaProjectManager.ensureMainScriptForTarget(active, target);
+            setScriptFile(auto);
+            script = auto;
+        }
+
+        if (script == null) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "Choose a script file first");
+            return;
+        }
+
+        // 3) 持久化配置：lastTarget / mainScript
+        if (active != null && spawnRadio.isSelected()) {
+            fridaProjectManager.updateProjectConfig(active, c -> c.lastTarget = target);
+        }
+        if (active != null) {
+            String rel = fridaProjectManager.toProjectRelativePath(active, script);
+            if (rel != null) {
+                fridaProjectManager.updateProjectConfig(active, c -> c.mainScript = rel);
+            }
+        }
+
+        // 4) 构建 RunMode
         FridaRunMode mode;
         if (spawnRadio.isSelected()) {
             mode = new SpawnRunMode(target);
@@ -403,6 +628,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             ZaFridaNotifier.error(project, "ZAFrida", "Start failed: " + t.getMessage());
         }
     }
+
 
     private void stopFrida() {
         sessionService.stop();
