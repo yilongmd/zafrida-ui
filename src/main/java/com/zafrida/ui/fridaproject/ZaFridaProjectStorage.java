@@ -127,4 +127,23 @@ public final class ZaFridaProjectStorage {
         if (cfg.lastTarget != null) root.setAttribute("lastTarget", cfg.lastTarget);
         return new XMLOutputter(Format.getPrettyFormat()).outputString(new Document(root));
     }
+
+    // 仅在外层已经处于 write-action 时调用
+    public void saveWorkspaceNoWriteAction(@NotNull VirtualFile baseDir, @NotNull ZaFridaWorkspaceConfig cfg) {
+        try {
+            VirtualFile file = baseDir.findChild(ZaFridaProjectFiles.WORKSPACE_FILE);
+            if (file == null) file = baseDir.createChildData(this, ZaFridaProjectFiles.WORKSPACE_FILE);
+            VfsUtil.saveText(file, toWorkspaceXml(cfg));
+        } catch (Throwable ignore) {}
+    }
+
+    // 仅在外层已经处于 write-action 时调用
+    public void saveProjectConfigNoWriteAction(@NotNull VirtualFile fridaProjectDir, @NotNull ZaFridaProjectConfig cfg) {
+        try {
+            VirtualFile f = fridaProjectDir.findChild(ZaFridaProjectFiles.PROJECT_FILE);
+            if (f == null) f = fridaProjectDir.createChildData(this, ZaFridaProjectFiles.PROJECT_FILE);
+            VfsUtil.saveText(f, toProjectXml(cfg));
+        } catch (Throwable ignore) {}
+    }
+
 }

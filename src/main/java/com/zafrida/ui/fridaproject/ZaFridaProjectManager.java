@@ -64,35 +64,50 @@ public final class ZaFridaProjectManager {
         String rootFolder = platform.rootFolderName();
         String relDir = rootFolder + "/" + safeName;
 
-        VirtualFile projectDir = null;
-        try {
-            projectDir = VfsUtil.createDirectoryIfMissing(base, relDir);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        // 默认 config
-        ZaFridaProjectConfig cfg = new ZaFridaProjectConfig();
-        cfg.name = safeName;
-        cfg.platform = platform;
-        cfg.mainScript = ZaFridaProjectFiles.DEFAULT_MAIN_SCRIPT;
-
-        storage.saveProjectConfig(project, projectDir, cfg);
-        // 默认脚本 agent.js
-        ensureFile(projectDir, cfg.mainScript, defaultAgentSkeleton());
-
+        // 先构造对象（不触发写）
         ZaFridaFridaProject fp = new ZaFridaFridaProject(safeName, platform, relDir);
 
-        synchronized (this) {
-            byName.put(fp.getName(), fp);
-            workspace.projects.removeIf(x -> x.getName().equals(fp.getName()));
-            workspace.projects.add(fp);
-            workspace.lastSelected = fp.getName();
-            active = fp;
-        }
-        storage.saveWorkspace(project, workspace);
+        // 写操作：创建目录、写 project config、写默认脚本、写 workspace 文件
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project, () -> {
+            VirtualFile projectDir = null;
+            try {
+                projectDir = VfsUtil.createDirectoryIfMissing(base, relDir);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+            // 1) project config
+            ZaFridaProjectConfig cfg = new ZaFridaProjectConfig();
+            cfg.name = safeName;
+            cfg.platform = platform;
+            cfg.mainScript = ZaFridaProjectFiles.DEFAULT_MAIN_SCRIPT;
+
+            // 这里不要再内部再套 WriteCommandAction（避免嵌套）
+            storage.saveProjectConfigNoWriteAction(projectDir, cfg);
+
+            // 2) default script
+            ensureFileNoWriteAction(projectDir, cfg.mainScript, defaultAgentSkeleton());
+
+            // 3) 更新 workspace in-memory + 写 workspace 文件
+            synchronized (this) {
+                byName.put(fp.getName(), fp);
+                workspace.projects.removeIf(x -> x.getName().equals(fp.getName()));
+                workspace.projects.add(fp);
+                workspace.lastSelected = fp.getName();
+                active = fp;
+            }
+            storage.saveWorkspaceNoWriteAction(base, workspace);
+
+            // refresh vfs
+            projectDir.refresh(false, true);
+            base.refresh(false, true);
+        });
+
+        // 写完后再发事件（避免 UI 在写 action 中做重活）
         project.getMessageBus().syncPublisher(TOPIC).onActiveProjectChanged(fp);
         return fp;
     }
+
 
     public @NotNull ZaFridaProjectConfig loadProjectConfig(@NotNull ZaFridaFridaProject p) {
         VirtualFile dir = resolveProjectDir(p);
@@ -129,6 +144,17 @@ public final class ZaFridaProjectManager {
         if (dir == null) return null;
         return storage.relativize(dir, file);
     }
+
+    private static void ensureFileNoWriteAction(@NotNull VirtualFile dir, @NotNull String name, @NotNull String content) {
+        try {
+            VirtualFile f = dir.findChild(name);
+            if (f == null) {
+                f = dir.createChildData(ZaFridaProjectManager.class, name);
+                VfsUtil.saveText(f, content);
+            }
+        } catch (Throwable ignore) {}
+    }
+
 
     /**
      * 包名末段生成默认主脚本：com.su.fridatest -> fridatest.js
