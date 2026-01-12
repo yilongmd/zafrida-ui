@@ -1,5 +1,6 @@
 package com.zafrida.ui.fridaproject.ui;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.ui.components.JBTextField;
@@ -14,8 +15,8 @@ public final class CreateZaFridaProjectDialog extends DialogWrapper {
     private final JBTextField nameField = new JBTextField();
     private final ComboBox<ZaFridaPlatform> platformCombo = new ComboBox<>(ZaFridaPlatform.values());
 
-    public CreateZaFridaProjectDialog() {
-        super(true);
+    public CreateZaFridaProjectDialog(@Nullable Project project) {
+        super(project, true);
         setTitle("Create ZAFrida Project");
         init();
     }

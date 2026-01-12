@@ -7,17 +7,19 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.components.JBTextField;
 import com.zafrida.ui.frida.*;
 import com.zafrida.ui.fridaproject.*;
+import com.zafrida.ui.fridaproject.ui.CreateZaFridaProjectDialog;
+import com.zafrida.ui.fridaproject.ui.ZaFridaProjectSettingsDialog;
 import com.zafrida.ui.session.RunningSession;
 import com.zafrida.ui.session.ZaFridaSessionService;
 import com.zafrida.ui.python.ProjectPythonEnvResolver;
 import com.zafrida.ui.python.PythonEnvInfo;
 import com.zafrida.ui.ui.components.SearchableComboBoxPanel;
 import com.zafrida.ui.ui.render.DeviceCellRenderer;
-import com.zafrida.ui.ui.render.ProcessCellRenderer;
 import com.zafrida.ui.util.ProjectFileUtil;
 import com.zafrida.ui.util.ZaFridaNotifier;
 import com.zafrida.ui.settings.ZaFridaSettingsService;
@@ -31,8 +33,6 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
@@ -55,10 +55,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final ComboBox<FridaDevice> deviceCombo = new ComboBox<>();
     private final JButton refreshDevicesBtn = new JButton("Refresh");
     private final JButton addRemoteBtn = new JButton("+Remote");
-
-    private final ComboBox<FridaProcessScope> scopeCombo = new ComboBox<>(FridaProcessScope.values());
-    private final ComboBox<FridaProcess> processCombo = new ComboBox<>();
-    private final JButton refreshProcessesBtn = new JButton("Refresh");
 
     private final JBTextField scriptField = new JBTextField();
     private final JButton chooseScriptBtn = new JButton("Choose...");
@@ -84,6 +80,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final SearchableComboBoxPanel<ZaFridaFridaProject> fridaProjectSelector =
             new SearchableComboBoxPanel<>(p -> p == null ? "" : p.getName());
     private final JButton newFridaProjectBtn = new JButton("New Project");
+    private final JButton projectSettingsBtn = new JButton("Settings");
+    private final JButton languageToggleBtn =
+            new JButton(IconLoader.getIcon("/META-INF/icons/lang-toggle.svg", ZaFridaRunPanel.class));
     private boolean updatingFridaProjectSelector = false;
 
 
@@ -109,7 +108,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         int row = 0;
         row = addRow(form, row, new JLabel("Project"), buildFridaProjectRow());
         row = addRow(form, row, new JLabel("Device"), buildDeviceRow());
-        row = addRow(form, row, new JLabel("Scope"), buildProcessRow());
         row = addRow(form, row, new JLabel("Script"), buildScriptRow());
         row = addRow(form, row, new JLabel("Mode"), buildModeRow());
         row = addRow(form, row, new JLabel("Extra"), buildExtraRow());
@@ -128,7 +126,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private void initUiState() {
         deviceCombo.setRenderer(new DeviceCellRenderer());
-        processCombo.setRenderer(new ProcessCellRenderer());
         scriptField.setEditable(false);
         stopBtn.setEnabled(false);
         extraArgsField.setToolTipText("Extra args passed to frida, e.g. --realm=emulated");
@@ -137,15 +134,17 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         group.add(spawnRadio);
         group.add(attachRadio);
 
-        scopeCombo.setSelectedItem(FridaProcessScope.RUNNING_APPS);
         targetField.setColumns(28);
         extraArgsField.setColumns(28);
+        languageToggleBtn.setToolTipText("中文 / English");
     }
 
     private JPanel buildFridaProjectRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         row.add(fridaProjectSelector);
         row.add(newFridaProjectBtn);
+        row.add(projectSettingsBtn);
+        row.add(languageToggleBtn);
         return row;
     }
 
@@ -160,14 +159,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             ApplicationManager.getApplication().getService(ZaFridaSettingsService.class).addRemoteHost(h);
             reloadDevicesAsync();
         });
-        refreshProcessesBtn.addActionListener(e -> reloadProcessesAsync());
-
-        deviceCombo.addActionListener(e -> reloadProcessesAsync());
-        scopeCombo.addActionListener(e -> reloadProcessesAsync());
-
-        processCombo.addActionListener(e -> onProcessSelected());
-        spawnRadio.addActionListener(e -> onProcessSelected());
-        attachRadio.addActionListener(e -> onProcessSelected());
 
         clearConsoleBtn.addActionListener(e -> consolePanel.clear());
 
@@ -179,6 +170,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             fridaProjectManager.setActiveProject(fridaProjectSelector.getSelectedItem());
         });
         newFridaProjectBtn.addActionListener(e -> createNewFridaProject());
+        projectSettingsBtn.addActionListener(e -> openProjectSettings());
+        languageToggleBtn.addActionListener(e -> Messages.showInfoMessage(
+                project,
+                "Switch UI language (中文/English) is coming soon.",
+                "ZAFrida"
+        ));
         chooseScriptBtn.addActionListener(e -> {
             ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
             VirtualFile initial = active != null ? fridaProjectManager.resolveProjectDir(active) : null;
@@ -211,9 +208,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                     // 项目列表可能被新增/导入，所以这里顺手刷新 selector items
                     reloadFridaProjectsIntoUi();
                     applyActiveFridaProjectToUi(newProject);
-
-                    // 切项目后：刷新 targets，并尝试匹配该项目保存的 lastTarget
-                    reloadProcessesAsync();
                 });
             }
         });
@@ -252,8 +246,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         ZaFridaProjectConfig cfg = fridaProjectManager.loadProjectConfig(active);
 
-        // 1) 恢复 lastTarget（只对 Spawn 有意义）
-        if (spawnRadio.isSelected() && !StringUtil.isEmptyOrSpaces(cfg.lastTarget)) {
+        // 1) 恢复 lastTarget（由设置页保存）
+        if (!StringUtil.isEmptyOrSpaces(cfg.lastTarget)) {
             targetField.setText(cfg.lastTarget);
         }
 
@@ -273,34 +267,16 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
     private void createNewFridaProject() {
-        String name = Messages.showInputDialog(
-                project,
-                "Frida project name:",
-                "Create ZAFrida Project",
-                null
-        );
-        if (name == null) return;
+        CreateZaFridaProjectDialog dialog = new CreateZaFridaProjectDialog(project);
+        if (!dialog.showAndGet()) return;
 
-        name = name.trim();
+        String name = dialog.getProjectName();
         if (name.isEmpty()) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Project name is empty");
             return;
         }
 
-        String[] options = new String[]{"Android", "iOS"};
-
-        // 这个 API 版本最稳：返回点击按钮的 index（0..n-1），关闭窗口可能返回 -1
-        int idx = Messages.showDialog(
-                project,
-                "Select platform:",
-                "Create ZAFrida Project",
-                options,
-                0,
-                null
-        );
-        if (idx < 0 || idx >= options.length) return;
-
-        ZaFridaPlatform platform = (idx == 1) ? ZaFridaPlatform.IOS : ZaFridaPlatform.ANDROID;
+        ZaFridaPlatform platform = dialog.getPlatform();
 
         try {
             ZaFridaFridaProject created = fridaProjectManager.createAndActivate(name, platform);
@@ -312,6 +288,18 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         } catch (Throwable t) {
             consolePanel.error("[ZAFrida] Create project failed: " + t.getMessage());
             ZaFridaNotifier.error(project, "ZAFrida", "Create project failed: " + t.getMessage());
+        }
+    }
+
+    private void openProjectSettings() {
+        ZaFridaProjectSettingsDialog dialog = new ZaFridaProjectSettingsDialog(
+                project,
+                fridaProjectManager,
+                fridaCli,
+                () -> (FridaDevice) deviceCombo.getSelectedItem()
+        );
+        if (dialog.showAndGet()) {
+            applyActiveFridaProjectToUi(fridaProjectManager.getActiveProject());
         }
     }
 
@@ -329,14 +317,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return p;
     }
 
-    private JPanel buildProcessRow() {
-        JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        p.add(scopeCombo);
-        processCombo.setPrototypeDisplayValue(new FridaProcess(1234, "com.example.app", "com.example.app"));
-        p.add(processCombo);
-        p.add(refreshProcessesBtn);
-        return p;
-    }
 
     private JPanel buildScriptRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -395,19 +375,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         this.templatePanel.setCurrentScriptFile(file);
     }
 
-    private void onProcessSelected() {
-        FridaProcess p = (FridaProcess) processCombo.getSelectedItem();
-        if (p == null) return;
-
-        if (spawnRadio.isSelected()) {
-            String t = p.getIdentifier();
-            if (t == null || t.isBlank()) t = p.getName();
-            targetField.setText(t);
-        } else {
-            Integer pid = p.getPid();
-            targetField.setText(pid != null ? String.valueOf(pid) : "");
-        }
-    }
 
     private void printToolchainInfoOnce() {
         if (printedToolchainInfo) return;
@@ -464,7 +431,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                     if (!devices.isEmpty()) deviceCombo.setSelectedIndex(0);
                     consolePanel.info("[ZAFrida] Devices loaded: " + devices.size());
                     disableControls(false);
-                    reloadProcessesAsync();
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() -> {
@@ -475,58 +441,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         });
     }
 
-    private void reloadProcessesAsync() {
-        FridaDevice dev = (FridaDevice) deviceCombo.getSelectedItem();
-        if (dev == null) return;
-
-        disableProcesses(true);
-        consolePanel.info("[ZAFrida] Loading targets...");
-
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                FridaProcessScope scope = (FridaProcessScope) scopeCombo.getSelectedItem();
-                if (scope == null) scope = FridaProcessScope.RUNNING_APPS;
-
-                List<FridaProcess> ps = fridaCli.listProcesses(project, dev, scope);
-
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    processCombo.removeAllItems();
-                    for (FridaProcess p : ps) processCombo.addItem(p);
-                    if (!ps.isEmpty()) processCombo.setSelectedIndex(0);
-                    consolePanel.info("[ZAFrida] Targets loaded: " + ps.size());
-                    disableProcesses(false);
-                    onProcessSelected();
-
-                    String savedTarget = null;
-                    ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
-                    if (active != null) savedTarget = fridaProjectManager.loadProjectConfig(active).lastTarget;
-
-                    boolean matched = false;
-                    if (spawnRadio.isSelected() && !StringUtil.isEmptyOrSpaces(savedTarget)) {
-                        for (int i = 0; i < ps.size(); i++) {
-                            FridaProcess p = ps.get(i);
-                            if (savedTarget.equals(p.getIdentifier()) || savedTarget.equals(p.getName())) {
-                                processCombo.setSelectedIndex(i);
-                                matched = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!matched && !ps.isEmpty()) processCombo.setSelectedIndex(0);
-                    onProcessSelected();
-                    if (spawnRadio.isSelected() && !matched && !StringUtil.isEmptyOrSpaces(savedTarget)) {
-                        targetField.setText(savedTarget);
-                    }
-
-                });
-            } catch (Throwable t) {
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    consolePanel.error("[ZAFrida] Load targets failed: " + t.getMessage());
-                    disableProcesses(false);
-                });
-            }
-        });
-    }
 
     private void runFrida() {
         FridaDevice dev = (FridaDevice) deviceCombo.getSelectedItem();
@@ -641,16 +555,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         deviceCombo.setEnabled(!disabled);
         refreshDevicesBtn.setEnabled(!disabled);
         addRemoteBtn.setEnabled(!disabled);
-        scopeCombo.setEnabled(!disabled);
-        processCombo.setEnabled(!disabled);
-        refreshProcessesBtn.setEnabled(!disabled);
     }
 
-    private void disableProcesses(boolean disabled) {
-        scopeCombo.setEnabled(!disabled);
-        processCombo.setEnabled(!disabled);
-        refreshProcessesBtn.setEnabled(!disabled);
-    }
 
     @Override
     public void dispose() {
