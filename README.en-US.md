@@ -74,19 +74,19 @@ System Effect
 ##### Main Interface & Run Panel
 > Provides device selection, script selection, run mode configuration, and console output.
 
-![Run Panel](https://via.placeholder.com/800x500?text=Run+Panel+Screenshot)
+![Run Panel](doc/run_panel.png "Run Panel Screenshot")
 ##### Template Management Panel
 > Select categories on the left, check templates in the middle, and preview code on the right. Checkboxes directly control the effectiveness of script content.
 
-![Template Panel](https://via.placeholder.com/800x500?text=Template+Panel+Screenshot)
+![Template Panel](doc/template_panel.png "Template Panel Screenshot")
 ##### Settings
 > Supports customizing Frida tool paths, remote connection addresses, and log configurations.
 
-![Settings](https://via.placeholder.com/800x500?text=Settings+Screenshot)
+![Settings](doc/settings.png "Settings Screenshot")
 ##### Project Wizard
 > Quickly create standardized Frida project structures.
 
-![New Project](https://via.placeholder.com/600x400?text=New+Project+Dialog)
+![New Project](doc/new_project.png "New Project Dialog")
 Quick Start
 -----------------------------------
 

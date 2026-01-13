@@ -74,19 +74,19 @@ ZAFrida UI 适用于所有使用 Frida 进行逆向工程的场景，特别是�
 ##### 主界面与运行面板 (Run Panel)
 > 提供设备选择、脚本选择、运行模式配置及控制台输出。
 
-![Run Panel](https://via.placeholder.com/800x500?text=Run+Panel+Screenshot)
+![Run Panel](doc/run_panel.png "Run Panel Screenshot")
 ##### 动态模板管理 (Template Panel)
 > 左侧选择分类，中间勾选模板，右侧实时预览代码。勾选框直接控制脚本内容的生效与否。
 
-![Template Panel](https://via.placeholder.com/800x500?text=Template+Panel+Screenshot)
+![Template Panel](doc/template_panel.png "Template Panel Screenshot")
 ##### 设置界面 (Settings)
 > 支持自定义 Frida 工具路径、远程连接地址及日志配置。
 
-![Settings](https://via.placeholder.com/800x500?text=Settings+Screenshot)
+![Settings](doc/settings.png "Settings Screenshot")
 ##### 项目创建向导
 > 快速创建标准化的 Frida 项目结构。
 
-![New Project](https://via.placeholder.com/600x400?text=New+Project+Dialog)
+![New Project](doc/new_project.png "New Project Dialog")
 快速入门
 -----------------------------------
 
