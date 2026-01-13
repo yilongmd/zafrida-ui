@@ -46,3 +46,4 @@ bin/
 rebel.xml
 /.intellijPlatform/
 **/repomix-output*
+/patch.diff

@@ -2,6 +2,7 @@ package com.zafrida.ui.fridaproject.ui;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogWrapper;
@@ -243,6 +244,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         FridaProcessScope scope = (FridaProcessScope) scopeCombo.getSelectedItem();
         if (scope == null) scope = FridaProcessScope.RUNNING_APPS;
 
+        // 该对话框是 Modal 的：如果直接 invokeLater（默认 NON_MODAL），更新 UI 的 Runnable 会被阻塞，
+        // 进而出现 processes 明明有数据但 targetCombo 不刷新的现象。
+        final ModalityState modality = ModalityState.stateForComponent(targetCombo);
+
         refreshTargetsBtn.setEnabled(false);
         FridaProcessScope finalScope = scope;
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -257,13 +262,13 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
                         }
                     }
                     refreshTargetsBtn.setEnabled(true);
-                });
+                }, modality);
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() -> {
                     refreshTargetsBtn.setEnabled(true);
                     logError("[ZAFrida] Load targets failed: " + t.getMessage());
                     Messages.showWarningDialog(project, "Load targets failed: " + t.getMessage(), "ZAFrida");
-                });
+                }, modality);
             }
         });
     }

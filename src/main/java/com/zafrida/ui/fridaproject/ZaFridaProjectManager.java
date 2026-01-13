@@ -6,6 +6,7 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.SlowOperations;
 import com.zafrida.ui.frida.FridaProcessScope;
 import com.zafrida.ui.frida.FridaConnectionMode;
 import com.intellij.util.messages.Topic;
@@ -143,7 +144,10 @@ public final class ZaFridaProjectManager {
     public @Nullable VirtualFile resolveProjectDir(@NotNull ZaFridaFridaProject p) {
         VirtualFile base = project.getBaseDir();
         if (base == null) return null;
-        return base.findFileByRelativePath(p.getRelativeDir());
+
+        final VirtualFile[] out = new VirtualFile[1];
+        SlowOperations.allowSlowOperations(() -> out[0] = base.findFileByRelativePath(p.getRelativeDir()));
+        return out[0];
     }
 
     public @Nullable String toProjectRelativePath(@NotNull ZaFridaFridaProject p, @NotNull VirtualFile file) {

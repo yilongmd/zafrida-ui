@@ -288,7 +288,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         if (dir != null) {
             String rel = cfg.mainScript;
             if (!StringUtil.isEmptyOrSpaces(rel)) {
-                VirtualFile f = dir.findFileByRelativePath(rel);
+                final VirtualFile[] fRef = new VirtualFile[1];
+                SlowOperations.allowSlowOperations(() -> fRef[0] = dir.findFileByRelativePath(rel));
+                VirtualFile f = fRef[0];
                 if (f != null && !f.isDirectory()) {
                     setScriptFile(f);
                 } else {
