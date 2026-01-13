@@ -16,8 +16,9 @@ public final class ZaFridaToolWindowPanel extends JPanel implements Disposable {
     public ZaFridaToolWindowPanel(Project project) {
         super(new BorderLayout());
 
+        // consolePanel 必须先初始化，因为 templatePanel 需要它
         this.consolePanel = new ZaFridaConsolePanel(project);
-        this.templatePanel = new ZaFridaTemplatePanel(project);
+        this.templatePanel = new ZaFridaTemplatePanel(project, consolePanel);
         this.runPanel = new ZaFridaRunPanel(project, consolePanel, templatePanel);
 
         // top: run + templates
