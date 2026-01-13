@@ -258,22 +258,29 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
             if (contentStart >= contentEnd) return;
 
             String templateContent = content.substring(contentStart, contentEnd);
+            // 移除末尾多余的换行符，只保留一个
+            while (templateContent.endsWith("\n\n")) {
+                templateContent = templateContent.substring(0, templateContent.length() - 1);
+            }
+
             String[] lines = templateContent.split("\n", -1);
             StringBuilder commented = new StringBuilder();
 
-            for (String line : lines) {
-                if (!line.trim().isEmpty() && !line.trim().startsWith("//")) {
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                // 跳过最后的空行
+                if (i == lines.length - 1 && line.isEmpty()) {
+                    continue;
+                }
+                // 所有非空行都添加注释前缀，不管是否已有 //
+                if (!line.isEmpty()) {
                     commented.append("// ").append(line).append("\n");
                 } else {
-                    commented.append(line).append("\n");
+                    commented.append("//\n");
                 }
             }
 
-            if (commented.length() > 0 && commented.charAt(commented.length() - 1) == '\n') {
-                commented.setLength(commented.length() - 1);
-            }
-
-            document.replaceString(contentStart, contentEnd, commented.toString() + "\n");
+            document.replaceString(contentStart, contentEnd, commented.toString());
         });
     }
 
@@ -292,12 +299,25 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
             if (contentStart >= contentEnd) return;
 
             String templateContent = content.substring(contentStart, contentEnd);
+            // 移除末尾多余的换行符
+            while (templateContent.endsWith("\n\n")) {
+                templateContent = templateContent.substring(0, templateContent.length() - 1);
+            }
+
             String[] lines = templateContent.split("\n", -1);
             StringBuilder uncommented = new StringBuilder();
 
-            for (String line : lines) {
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                // 跳过最后的空行
+                if (i == lines.length - 1 && line.isEmpty()) {
+                    continue;
+                }
+                // 只移除一层 "// " 前缀
                 if (line.startsWith("// ")) {
                     uncommented.append(line.substring(3)).append("\n");
+                } else if (line.equals("//")) {
+                    uncommented.append("\n");
                 } else if (line.startsWith("//")) {
                     uncommented.append(line.substring(2)).append("\n");
                 } else {
@@ -305,11 +325,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
                 }
             }
 
-            if (uncommented.length() > 0 && uncommented.charAt(uncommented.length() - 1) == '\n') {
-                uncommented.setLength(uncommented.length() - 1);
-            }
-
-            document.replaceString(contentStart, contentEnd, uncommented.toString() + "\n");
+            document.replaceString(contentStart, contentEnd, uncommented.toString());
         });
     }
 
