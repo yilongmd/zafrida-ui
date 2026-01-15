@@ -1,11 +1,7 @@
 // Android Class Method Tracer (Android 类方法追踪器)
 // Traces all methods of a specified Java class (Prints Args, Return Value, and Backtrace). (追踪指定 Java 类的所有方法，打印参数、返回值和调用栈)
 
-Java.perform(function() {
-    // --- CONFIGURATION ---
-    var targetClass = "com.example.target.ClassName"; // EDIT THIS
-    // ---------------------
-
+function trace_class(targetClass) {
     var hook = Java.use(targetClass);
     var methods = hook.class.getDeclaredMethods();
 
@@ -30,11 +26,15 @@ Java.perform(function() {
                 // Print Return
                 console.log("    Return: " + retval);
 
-                // Optional: Print Stack Trace
-                // console.log(Java.use("android.util.Log").getStackTraceString(Java.use("java.lang.Exception").$new()));
-
                 return retval;
             }
         });
     });
+}
+
+Java.perform(function() {
+    // --- CONFIGURATION ---
+    var targetClass = "com.example.target.ClassName"; // EDIT THIS
+    // ---------------------
+    trace_class(targetClass);
 });

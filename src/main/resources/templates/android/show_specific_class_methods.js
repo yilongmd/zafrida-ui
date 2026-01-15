@@ -1,16 +1,20 @@
-// Show Methods of Specific Java Class
-// Print all methods of a specified Java class (including inherited methods).
+// Show Methods of Specific Java Class (显示指定Java类的方法)
+// Print all methods of a specified Java class (including inherited methods). (打印指定Java类的所有方法，包括继承的方法)
+
+function show_specific_class_methods(className) {
+    var clazz = Java.use(className);
+    var methodArr = clazz.class.getMethods();
+    console.log("[*] Class Name: " + className);
+    console.log("[*] Method Names:");
+    for (var m in methodArr) {
+        console.log("    " + methodArr[m]);
+    }
+}
 
 Java.perform(function() {
-	//enter class name here: example android.security.keystore.KeyGenParameterSpec$Builder
-	//class inside a class is defined using CLASS_NAME$SUB_CLASS_NAME
-	var class_name = "android.security.keystore.KeyGenParameterSpec$Builder";
-	var db1 = Java.use(class_name);
-	var methodArr = db1.class.getMethods();
-	console.log("[*] Class Name: " + class_name)
-	console.log("[*] Method Names:")
-	for(var m in methodArr)
-	{
-		console.log(methodArr[m]);
-	}
+    // --- CONFIGURATION ---
+    // class inside a class is defined using CLASS_NAME$SUB_CLASS_NAME
+    var className = "android.security.keystore.KeyGenParameterSpec$Builder"; // EDIT THIS
+    // ---------------------
+    show_specific_class_methods(className);
 });

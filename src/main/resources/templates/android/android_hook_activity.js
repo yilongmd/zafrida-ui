@@ -1,7 +1,7 @@
 // Android Activity Lifecycle Hook (Android Activity 生命周期钩子)
 // Hooks Activity.onCreate to trace which Activities are being launched and capture their Intent. (钩住 Activity.onCreate 方法，追踪启动的 Activity 并捕获 Intent 信息)
 
-Java.perform(function() {
+function hook_activity_oncreate() {
     var Activity = Java.use("android.app.Activity");
 
     Activity.onCreate.overload("android.os.Bundle").implementation = function(bundle) {
@@ -19,4 +19,8 @@ Java.perform(function() {
 
         return this.onCreate(bundle);
     };
+}
+
+Java.perform(function() {
+    hook_activity_oncreate();
 });
