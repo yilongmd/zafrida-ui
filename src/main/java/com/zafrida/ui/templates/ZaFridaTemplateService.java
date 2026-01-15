@@ -35,6 +35,8 @@ public class ZaFridaTemplateService {
     private final @NotNull Path userTemplatesRoot;
 
     private final List<ZaFridaTemplate> cachedTemplates = new ArrayList<>();
+    /** 强制覆盖内置模板开关（开发调试用） */
+    private static final boolean FORCE_OVERWRITE_BUILTIN = true;
 
     public ZaFridaTemplateService(@NotNull Project project) {
         this.project = project;
@@ -68,14 +70,13 @@ public class ZaFridaTemplateService {
     }
 
     /**
-     * 复制内置模板到用户目录（不覆盖已存在的文件）
+     * 复制内置模板到用户目录
      */
     private void copyBuiltInTemplates(String platform) {
         String resourcePath = TEMPLATES_RESOURCE_PATH + "/" + platform;
         Path targetDir = userTemplatesRoot.resolve(platform);
 
         try {
-            // 获取资源目录中的模板列表
             List<String> templateFiles = listResourceFiles(resourcePath);
 
             for (String fileName : templateFiles) {
@@ -83,12 +84,13 @@ public class ZaFridaTemplateService {
 
                 Path targetFile = targetDir.resolve(fileName);
 
-                // 只在文件不存在时复制
-                if (!Files.exists(targetFile)) {
+                // 根据开关决定是否覆盖
+                if (FORCE_OVERWRITE_BUILTIN || !Files.exists(targetFile)) {
                     String content = readResourceFile(resourcePath + "/" + fileName);
                     if (content != null) {
                         Files.writeString(targetFile, content, StandardCharsets.UTF_8);
-                        LOG.info("Copied template: " + fileName + " to " + platform);
+                        LOG.info((FORCE_OVERWRITE_BUILTIN ? "Overwritten" : "Copied") +
+                                " template: " + fileName + " to " + platform);
                     }
                 }
             }
