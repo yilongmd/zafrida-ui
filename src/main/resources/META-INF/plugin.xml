@@ -49,7 +49,7 @@
                 class="com.zafrida.ui.fridaproject.actions.NewZaFridaProjectAction"
                 text="New Frida Project"
                 description="Create a new ZAFrida project in the IDE root">
-            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="NewGroup"/>
         </action>
         <action id="ZAFrida.LoadProjectFromFolder"
                 class="com.zafrida.ui.fridaproject.actions.LoadZaFridaProjectFromFolderAction"
