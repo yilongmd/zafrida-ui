@@ -98,27 +98,47 @@ public class ZaFridaTemplateService {
     }
 
     /**
-     * 列出资源目录中的文件
+     * 列出资源目录中的文件（自动扫描，无需硬编码）
      */
     private List<String> listResourceFiles(String resourcePath) {
         List<String> files = new ArrayList<>();
 
-        // 硬编码内置模板文件名（因为无法直接列出资源目录）
-        if (resourcePath.endsWith("/" + ANDROID_DIR)) {
-            files.addAll(Arrays.asList(
-                    "hook_java_method.js",
-                    "hook_constructor.js",
-                    "enum_classes.js",
-                    "hook_native.js",
-                    "ssl_pinning_bypass.js"
-            ));
-        } else if (resourcePath.endsWith("/" + IOS_DIR)) {
-            files.addAll(Arrays.asList(
-                    "hook_objc_method.js",
-                    "list_classes.js",
-                    "list_methods.js",
-                    "ssl_pinning_bypass.js"
-            ));
+        try {
+            URL resourceUrl = getClass().getResource(resourcePath);
+            if (resourceUrl == null) {
+                LOG.warn("Resource path not found: " + resourcePath);
+                return files;
+            }
+
+            if (resourceUrl.getProtocol().equals("jar")) {
+                // 从 JAR 文件中读取
+                String jarPath = resourceUrl.getPath().substring(5, resourceUrl.getPath().indexOf("!"));
+                try (java.util.jar.JarFile jar = new java.util.jar.JarFile(java.net.URLDecoder.decode(jarPath, StandardCharsets.UTF_8))) {
+                    String prefix = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
+                    if (!prefix.endsWith("/")) prefix += "/";
+
+                    String finalPrefix = prefix;
+                    jar.stream()
+                            .filter(entry -> !entry.isDirectory())
+                            .filter(entry -> entry.getName().startsWith(finalPrefix))
+                            .filter(entry -> entry.getName().endsWith(".js"))
+                            .forEach(entry -> {
+                                String name = entry.getName().substring(finalPrefix.length());
+                                if (!name.contains("/")) { // 只取当前目录下的文件
+                                    files.add(name);
+                                }
+                            });
+                }
+            } else {
+                // 从文件系统读取（开发环境）
+                Path path = Paths.get(resourceUrl.toURI());
+                try (Stream<Path> stream = Files.list(path)) {
+                    stream.filter(p -> p.toString().endsWith(".js"))
+                            .forEach(p -> files.add(p.getFileName().toString()));
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to list resource files: " + resourcePath, e);
         }
 
         return files;

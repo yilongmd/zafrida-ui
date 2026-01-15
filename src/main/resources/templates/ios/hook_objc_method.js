@@ -1,5 +1,5 @@
-// Hook Objective-C Method
-// Hook ObjC方法
+// Hook Objective-C Method (Hook ObjC 方法)
+// Hook an Objective-C method and log arguments and return value. (钩住 Objective-C 方法，打印参数和返回值)
 
 var className = "TargetClass";
 var methodName = "- targetMethod:";

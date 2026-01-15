@@ -1,5 +1,5 @@
-// Hook Native Function
-// Hook native层函数
+// Hook Native Function (Hook Native 函数)
+// Hook native layer function using Interceptor. (使用 Interceptor 钩住 Native 层函数)
 
 Interceptor.attach(Module.findExportByName("libc.so", "open"), {
     onEnter: function(args) {

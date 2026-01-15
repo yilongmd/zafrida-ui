@@ -1,5 +1,5 @@
-// iOS SSL Pinning Bypass
-// 绕过iOS SSL证书校验
+// iOS SSL Pinning Bypass (iOS SSL 证书绑定绕过)
+// Bypass SSL certificate pinning on iOS. (绕过 iOS SSL 证书校验)
 
 var resolver = new ApiResolver('objc');
 resolver.enumerateMatches('-[* evaluateServerTrust:*]', {
