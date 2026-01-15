@@ -24,6 +24,22 @@ The core highlight is its **"Checkbox-style" Template Management System**: users
 
 ZAFrida does not replace Frida but serves as a powerful UI wrapper for `frida-tools`, seamlessly connecting with your existing Python and Frida environment.
 
+## Home
+![Home](doc/home.png "Home")
+
+Quick Start
+-----------------------------------
+
+1.  **Install Plugin**: Search for "ZAFrida" in the IDE Plugin Marketplace or install via disk.
+2.  **Configure Environment**: Go to `Settings` -> `Tools` -> `ZAFrida` and configure `frida` executable paths (if not auto-detected).
+3.  **Create Project**: Right-click in Project View -> `New Frida Project`.
+4.  **Write/Select Script**: Select your `agent.js` in the Run Panel.
+5.  **Hook & Debug**:
+    * Connect device (USB or Remote).
+    * Select target process or package name.
+    * Click **Run**.
+6.  **Use Templates**: Switch to the `Templates` tab, check the Hook functions you need (e.g., "SSL Pinning Bypass"), and the code will be automatically injected into your script.
+
 
 Features
 -----------------------------------
@@ -87,18 +103,6 @@ System Effect
 > Quickly create standardized Frida project structures.
 
 ![New Project](doc/new_project.png "New Project Dialog")
-Quick Start
------------------------------------
-
-1.  **Install Plugin**: Search for "ZAFrida" in the IDE Plugin Marketplace or install via disk.
-2.  **Configure Environment**: Go to `Settings` -> `Tools` -> `ZAFrida` and configure `frida` executable paths (if not auto-detected).
-3.  **Create Project**: Right-click in Project View -> `New Frida Project`.
-4.  **Write/Select Script**: Select your `agent.js` in the Run Panel.
-5.  **Hook & Debug**:
-    * Connect device (USB or Remote).
-    * Select target process or package name.
-    * Click **Run**.
-6.  **Use Templates**: Switch to the `Templates` tab, check the Hook functions you need (e.g., "SSL Pinning Bypass"), and the code will be automatically injected into your script.
 
 Technical Architecture
 -----------------------------------
@@ -109,4 +113,10 @@ Technical Architecture
 - Build Tool: Gradle
 - Dependency: `frida-tools` (Python environment)
 
-#### Directory Structure
+Acknowledgements
+-----------------------------------
+Special thanks to the following contributors for providing core Frida JS script templates:
+
+* **小佳**
+* **Lane**
+* **迷人**

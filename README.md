@@ -24,6 +24,22 @@ ZAFrida UI 是一款集成在 PyCharm 和 JetBrains 系列 IDE 中的 Frida 图�
 
 ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，无缝衔接您现有的 Python 和 Frida 环境。
 
+## 效果演示
+![Home](doc/home.png "Home")
+
+快速入门
+-----------------------------------
+
+1.  **安装插件**: 在 IDE 插件市场搜索 "ZAFrida" 或通过磁盘安装。
+2.  **配置环境**: 打开 `Settings` -> `Tools` -> `ZAFrida`，配置 `frida` 可执行文件路径（如果未自动识别）。
+3.  **创建项目**: 在项目视图右键 -> `New Frida Project`。
+4.  **编写/选择脚本**: 在 Run 面板选择你的 `agent.js`。
+5.  **Hook 调试**:
+* 连接设备 (USB 或 Remote 或 Gadget)。
+* 选择目标进程或包名。
+* 点击 **Run**。
+6.  **使用模板**: 切换到 `Templates` 标签页，勾选你需要的 Hook 功能（如 "SSL Pinning Bypass"），代码会自动注入到你的脚本中。
+
 
 功能特性
 -----------------------------------
@@ -88,19 +104,6 @@ ZAFrida UI 适用于所有使用 Frida 进行逆向工程的场景，特别是�
 
 ![New Project](doc/new_project.png "New Project Dialog")
 
-快速入门
------------------------------------
-
-1.  **安装插件**: 在 IDE 插件市场搜索 "ZAFrida" 或通过磁盘安装。
-2.  **配置环境**: 打开 `Settings` -> `Tools` -> `ZAFrida`，配置 `frida` 可执行文件路径（如果未自动识别）。
-3.  **创建项目**: 在项目视图右键 -> `New Frida Project`。
-4.  **编写/选择脚本**: 在 Run 面板选择你的 `agent.js`。
-5.  **Hook 调试**:
-  * 连接设备 (USB 或 Remote)。
-  * 选择目标进程或包名。
-  * 点击 **Run**。
-6.  **使用模板**: 切换到 `Templates` 标签页，勾选你需要的 Hook 功能（如 "SSL Pinning Bypass"），代码会自动注入到你的脚本中。
-
 技术架构
 -----------------------------------
 
@@ -108,6 +111,13 @@ ZAFrida UI 适用于所有使用 Frida 进行逆向工程的场景，特别是�
 - 语言: Java 21, Java
 - 框架: IntelliJ Platform SDK
 - 构建工具: Gradle
-- 依赖: `frida-tools` (Python environment)
+- 依赖: `frida``frida-tools` (Python environment)
 
-#### 目录结构
+
+致谢
+-----------------------------------
+特别感谢以下大佬为本项目提供的Frida JS 脚本模版支持：
+
+* **小佳**
+* **Lane**
+* **迷人**
