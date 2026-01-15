@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.zafrida"
-version = "0.0.4"
+version = "0.0.5"
 
 repositories {
     mavenCentral()
@@ -28,6 +28,16 @@ dependencies {
 
         // PyCharm 的 Python 核心插件
         bundledPlugin("PythonCore")
+    }
+}
+
+intellijPlatform {
+    // 1. 发布配置
+    publishing {
+        // 安全做法：从环境变量 "JB_TOKEN" 读取
+        token.set(providers.environmentVariable("JB_TOKEN"))
+        // 发布频道
+        channels.set(listOf("default"))
     }
 }
 
