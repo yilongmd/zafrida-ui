@@ -4,7 +4,18 @@ import com.zafrida.ui.frida.FridaConnectionMode;
 import com.zafrida.ui.frida.FridaProcessScope;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
+/**
+ * [DTO] 单个 ZAFrida 子项目的配置模型。
+ * <p>
+ * <strong>数据流：</strong>
+ * 映射到 {@code zafrida-project.xml} 文件。
+ * 存储特定 App 的逆向工程上下文：
+ * <ul>
+ * <li>{@code mainScript}: 入口脚本路径（相对路径）。</li>
+ * <li>{@code connectionMode}: 连接方式 (USB/Remote)。</li>
+ * <li>{@code lastTarget}: 上次调试的包名或 PID。</li>
+ * </ul>
+ */
 public final class ZaFridaProjectConfig {
     public static final int VERSION = 1;
 

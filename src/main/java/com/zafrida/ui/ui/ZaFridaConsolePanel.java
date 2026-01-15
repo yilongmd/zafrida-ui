@@ -18,6 +18,12 @@ import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 
+/**
+ * [UI组件] 自定义控制台面板。
+ * <p>
+ * 封装了 {@link ConsoleView}，并添加了简单的搜索工具栏。
+ * 它是 {@link com.zafrida.ui.session.ZaFridaSessionService} 输出日志的目标容器。
+ */
 public final class ZaFridaConsolePanel extends JPanel implements Disposable {
 
     private final ConsoleView consoleView;

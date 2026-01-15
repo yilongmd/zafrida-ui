@@ -9,7 +9,16 @@ import com.zafrida.ui.util.ZaFridaNotifier;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.charset.StandardCharsets;
-
+/**
+ * [辅助工具] Frida 智能补全安装器。
+ * <p>
+ * <strong>功能：</strong>
+ * 在项目根目录下创建 {@code .zafrida/typings/frida-gum.d.ts} 文件。
+ * <p>
+ * <strong>目的：</strong>
+ * 利用 IntelliJ/PyCharm 对 TypeScript 定义文件 (.d.ts) 的原生支持，
+ * 为 JavaScript 编辑器提供 {@code Java.use}, {@code Interceptor.attach} 等 Frida API 的代码补全和参数提示。
+ */
 public final class TypingsInstaller {
 
     private TypingsInstaller() {

@@ -4,7 +4,14 @@ import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-
+/**
+ * [工具类] IDE 通知中心封装。
+ * <p>
+ * <strong>功能：</strong>
+ * 向 IDE 右下角发送 "气泡通知" (Balloon Notifications)。
+ * 使用 {@code NotificationGroupManager} 获取配置在 plugin.xml 中的 "ZAFrida" 通知组。
+ * 替代 {@code Messages.showInfoMessage} 用于非阻塞的信息提示。
+ */
 public final class ZaFridaNotifier {
 
     private static final String GROUP_ID = "ZAFrida";

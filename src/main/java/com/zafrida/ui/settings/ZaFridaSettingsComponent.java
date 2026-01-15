@@ -17,7 +17,17 @@ import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.List;
-
+/**
+ * [UI组件] 全局设置面板的 Swing 实现。
+ * <p>
+ * <strong>包含控件：</strong>
+ * <ul>
+ * <li>Frida 工具链路径输入框 (frida, frida-ps, frida-ls-devices)。</li>
+ * <li>日志目录配置。</li>
+ * <li>远程主机列表 (Remote Hosts) 管理。</li>
+ * </ul>
+ * 它是 {@link ZaFridaSettingsConfigurable} 的视图层。
+ */
 public final class ZaFridaSettingsComponent {
 
     private final JBTextField fridaField = new JBTextField();

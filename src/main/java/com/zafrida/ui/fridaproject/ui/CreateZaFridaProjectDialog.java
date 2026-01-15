@@ -5,11 +5,17 @@ import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.ui.components.JBTextField;
 import com.zafrida.ui.fridaproject.ZaFridaPlatform;
+import com.zafrida.ui.fridaproject.actions.NewZaFridaProjectAction;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-
+/**
+ * [UI组件] 新建项目向导对话框。
+ * <p>
+ * 提供项目名称输入和平台选择 (Android/iOS)。
+ * 它是 {@link NewZaFridaProjectAction} 的前端界面。
+ */
 public final class CreateZaFridaProjectDialog extends DialogWrapper {
 
     private final JBTextField nameField = new JBTextField();

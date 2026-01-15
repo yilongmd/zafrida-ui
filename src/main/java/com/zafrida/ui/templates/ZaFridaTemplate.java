@@ -5,7 +5,17 @@ import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.Objects;
-
+/**
+ * [DTO] Frida 脚本模板实体。
+ * <p>
+ * <strong>数据流：</strong>
+ * 代表一个可复用的代码片段（Snippet）。
+ * <ul>
+ * <li>{@code id}: 唯一标识符，用于生成 {@code //== ZAFrida:TEMPLATE:id:BEGIN ==} 标记。</li>
+ * <li>{@code content}: 实际的 JavaScript 代码内容。</li>
+ * <li>{@code filePath}: 如果是用户自定义模板，指向磁盘上的物理文件；内置模板此字段可能为空。</li>
+ * </ul>
+ */
 public class ZaFridaTemplate {
 
     private final @NotNull String id;

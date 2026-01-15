@@ -17,6 +17,18 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
+/**
+ * [项目核心] ZAFrida 自研项目系统管理器。
+ * <p>
+ * <strong>架构说明：</strong>
+ * ZAFrida 引入了轻量级 "子项目" 概念，独立于 IDE 的 Project 结构。
+ * <ul>
+ * <li><strong>Workspace:</strong> 存储在 {@code zafrida-workspace.xml}，记录项目列表。</li>
+ * <li><strong>Project:</strong> 存储在具体目录的 {@code zafrida-project.xml}，记录 App 特有的 Hook 配置。</li>
+ * </ul>
+ * <p>
+ * <strong>职责：</strong> 负责项目的创建、加载、切换激活状态以及配置文件的读写原子性操作。
+ */
 @Service(Service.Level.PROJECT)
 public final class ZaFridaProjectManager {
 

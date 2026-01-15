@@ -15,7 +15,13 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-
+/**
+ * [UI入口] (扩展) 全局高级设置面板。
+ * <p>
+ * <strong>职责：</strong>
+ * 提供比基础设置更详细的配置项，如控制台缓冲区大小 (Max Console Lines)、字体大小、自动滚动等 UI 偏好设置。
+ * 使用 {@link com.zafrida.ui.config.ZaFridaGlobalSettings} 进行数据存储。
+ */
 public class ZaFridaGlobalConfigurable implements Configurable {
 
     private final ZaFridaGlobalSettings settings = ZaFridaGlobalSettings.getInstance();

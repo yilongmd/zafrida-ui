@@ -9,7 +9,17 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-
+/**
+ * [核心组件] 异步日志文件写入器。
+ * <p>
+ * <strong>设计模式：</strong>
+ * 生产者-消费者模式。
+ * <ul>
+ * <li><strong>生产者：</strong> Frida 进程的 Stdout/Stderr 监听器，调用 {@link #append(String)}。</li>
+ * <li><strong>消费者：</strong> 独立的后台守护线程 (Daemon Thread)，负责将队列中的日志刷入磁盘。</li>
+ * </ul>
+ * <strong>目的：</strong> 避免高频日志输出阻塞 UI 线程或 Frida 进程本身。
+ */
 public final class SessionLogWriter {
 
     private final @NotNull Path file;

@@ -9,6 +9,14 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
+/**
+ * [编辑器动作基类] Frida 代码片段插入的通用实现。
+ * <p>
+ * <strong>核心职责：</strong>
+ * 1. 定义 IDE 编辑器右键菜单的 Action 行为。
+ * 2. <strong>智能填充 (Smart Padding)：</strong> 自动检测光标前后的环境，在必要时自动补充换行符，防止插入的代码与现有代码粘连。
+ * 3. <strong>事务管理：</strong> 封装 {@link WriteCommandAction}，确保文件修改操作符合 IntelliJ 线程规范。
+ */
 public abstract class InsertFridaSnippetAction extends AnAction {
     private final @NotNull String snippet;
 

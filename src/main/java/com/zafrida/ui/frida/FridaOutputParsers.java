@@ -6,6 +6,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * [工具类] Frida CLI 输出解析器。
+ * <p>
+ * 负责解析 `frida-ps` 和 `frida-ls-devices` 的标准输出（Stdout），
+ * 包含去除 ANSI 颜色代码、表头识别和列数据提取逻辑。
+ */
 public final class FridaOutputParsers {
 
     private FridaOutputParsers() {

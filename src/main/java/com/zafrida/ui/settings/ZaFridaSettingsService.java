@@ -9,7 +9,14 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-
+/**
+ * [服务层] 全局配置持久化服务。
+ * <p>
+ * <strong>架构角色：</strong>
+ * 插件级单例服务，负责管理 {@link ZaFridaSettingsState} 的生命周期。
+ * 任何需要读取 {@code frida} 路径或全局 {@code remoteHosts} 列表的组件，
+ * 都应通过 {@code ApplicationManager.getApplication().getService(ZaFridaSettingsService.class)} 获取此服务。
+ */
 @State(
         name = "ZaFridaSettings",
         storages = {@Storage("zafrida.xml")}

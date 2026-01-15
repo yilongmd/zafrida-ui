@@ -1,5 +1,14 @@
 package com.zafrida.ui.fridaproject;
-
+/**
+ * [常量定义] ZAFrida 项目文件结构协议。
+ * <p>
+ * <strong>架构规范：</strong>
+ * <ul>
+ * <li>{@link #WORKSPACE_FILE}: 位于 IDE 项目根目录 (.idea 同级)，是全局注册表，记录当前 IDE 项目下有哪些 ZAFrida 子项目。</li>
+ * <li>{@link #PROJECT_FILE}: 位于每个子项目文件夹内，存储该 App 特有的 Hook 配置（包名、脚本路径等）。</li>
+ * <li>{@link #DEFAULT_MAIN_SCRIPT}: 默认生成的 Hook 入口脚本名称。</li>
+ * </ul>
+ */
 public final class ZaFridaProjectFiles {
     private ZaFridaProjectFiles() {}
     // IDE 项目根目录：记录有哪些 ZAFrida 项目 + 上次选中

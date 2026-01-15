@@ -6,7 +6,13 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
-
+/**
+ * [UI入口] IDE "Settings/Preferences" 菜单集成。
+ * <p>
+ * <strong>功能：</strong>
+ * 将 {@link ZaFridaSettingsComponent} (UI 面板) 注册到 IntelliJ 的设置树中。
+ * 负责在 UI 和 {@link ZaFridaSettingsService} (持久化状态) 之间同步数据（Apply/Reset 逻辑）。
+ */
 public final class ZaFridaSettingsConfigurable implements SearchableConfigurable {
 
     private final ZaFridaSettingsService settingsService;

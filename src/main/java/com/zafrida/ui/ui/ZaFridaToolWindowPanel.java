@@ -6,7 +6,16 @@ import com.intellij.ui.JBSplitter;
 
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
-
+/**
+ * [UI组件] 备用主面板容器。
+ * <p>
+ * 使用 {@link JBSplitter} 将界面划分为：
+ * <ul>
+ * <li>Top: 左右分割的 Run Panel 和 Template Panel。</li>
+ * <li>Bottom: Console Panel。</li>
+ * </ul>
+ * <strong>注意：</strong> 此类目前可能作为特定的视图模式使用，标准模式下通常使用 {@link ZaFridaMainToolWindow}。
+ */
 public final class ZaFridaToolWindowPanel extends JPanel implements Disposable {
 
     private final ZaFridaConsolePanel consolePanel;

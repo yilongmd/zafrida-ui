@@ -9,6 +9,12 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * [持久化] IDE 级别的项目配置存储（存储在 .idea/ 目录下）。
+ * <p>
+ * 注意区分：这是 IntelliJ 原生 Project 的配置，用于存储非共享的用户偏好（如最近打开的包名），
+ * 而 {@link com.zafrida.ui.fridaproject.ZaFridaProjectConfig} 是 ZAFrida 自定义的业务项目配置。
+ */
 @State(
     name = "ZaFridaProjectSettings",
     storages = @Storage("zafrida-project.xml")

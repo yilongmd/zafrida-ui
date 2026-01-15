@@ -18,6 +18,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * [核心服务] Frida 命令行工具执行网关。
+ * <p>
+ * <strong>核心职责：</strong>
+ * 1. 封装 `frida`, `frida-ps`, `frida-ls-devices` 的调用逻辑。
+ * 2. 负责将 {@link com.zafrida.ui.frida.FridaRunConfig} 转换为实际的 {@link GeneralCommandLine}。
+ * 3. <strong>关键逻辑：</strong> 必须调用 {@link ProjectPythonEnvResolver} 注入 Python 环境，否则会报 "command not found"。
+ * <p>
+ * 注意：所有命令输出强制使用 UTF-8 编码以支持中文应用名。
+ */
 public final class FridaCliService {
 
     private static final Logger LOG = Logger.getInstance(FridaCliService.class);

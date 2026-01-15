@@ -41,6 +41,20 @@ import java.util.List;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * [UI组件] 模板管理面板（复选框驱动开发核心）。
+ * <p>
+ * <strong>交互逻辑：</strong>
+ * 用户通过勾选/取消勾选左侧的 Hook 模板，直接控制右侧编辑器中的代码块。
+ * <p>
+ * <strong>实现原理：</strong>
+ * 依赖 {@link #onTemplateCheckboxChanged} 方法：
+ * <ul>
+ * <li>选中 -> 插入代码 或 取消注释 (Uncomment)。</li>
+ * <li>取消 -> 将对应 Marker 之间的代码每行添加 `//` 前缀 (Comment)，而非物理删除。</li>
+ * </ul>
+ * 这种机制保证了用户对模板的手动修改不会因为开关操作而丢失。
+ */
 public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
 
     private static final String CATEGORY_FAVORITES = "Favorites";

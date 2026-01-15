@@ -3,7 +3,13 @@ package com.zafrida.ui.frida;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Captured stdout/stderr/exitCode from running a frida-tools CLI command.
+ * [数据模型] 外部进程执行结果快照。
+ * <p>
+ * <strong>用途：</strong>
+ * 封装一次 CLI 命令（如 <code>frida-ps</code>）执行后的完整状态，
+ * 包含标准输出 (Stdout)、标准错误 (Stderr) 和退出码 (Exit Code)。
+ * <p>
+ * 用于 {@link com.zafrida.ui.frida.FridaCliService} 向由上层业务返回同步执行结果。
  */
 public final class CapturedOut {
 

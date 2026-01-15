@@ -10,7 +10,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-
+/**
+ * [工具类] 日志文件路径生成策略。
+ * <p>
+ * <strong>命名规范：</strong>
+ * {@code zafrida_{packageName}_{timestamp}.log}
+ * <p>
+ * <strong>存储位置：</strong>
+ * 优先存储在 ZAFrida 子项目目录下，如果未指定则存储在 IDE 项目根目录的 {@code zafrida-logs/} 文件夹中。
+ */
 public final class ZaFridaLogPaths {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");

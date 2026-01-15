@@ -25,15 +25,17 @@ import com.intellij.openapi.roots.ModuleRootManager;
 
 
 /**
- * Resolve the project's selected Python interpreter environment and apply it to a command line.
+ * [核心组件] Python 环境解析与注入器。
+ * <p>
+ * <strong>设计目的：</strong>
+ * 解决 IntelliJ 插件子进程无法继承 PyCharm Terminal 激活的 venv/conda 环境的问题。
+ * <p>
+ * <strong>工作流程：</strong>
+ * 1. 扫描 Project 或 Module 关联的 Python SDK。
+ * 2. 识别 SDK 类型（System, Venv, Conda）并定位 bin/Scripts 目录。
+ * 3. 生成 {@link PythonEnvInfo}，用于在 {@link com.zafrida.ui.frida.FridaCliService} 中修补 PATH 环境变量。
  *
- * <p>Why this is needed:
- * PyCharm's integrated terminal activates venv/conda and modifies PATH.
- * But plugin-spawned processes inherit the IDE process environment, not the terminal.
- * Therefore, running "frida-ls-devices" by name may fail even if it works in the terminal.
- *
- * <p>This class prepends the project's interpreter environment directories to PATH,
- * so frida-tools is resolved from the same env as the project interpreter.
+ * @see com.zafrida.ui.frida.FridaCliService
  */
 public final class ProjectPythonEnvResolver {
 

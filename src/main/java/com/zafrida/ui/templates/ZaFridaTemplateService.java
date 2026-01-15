@@ -13,7 +13,14 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
+/**
+ * [核心服务] 模板文件系统管理器。
+ * <p>
+ * <strong>职责：</strong>
+ * 1. <strong>初始化：</strong> 首次启动时将内置资源 (Resources) 中的模板释放到用户目录 {@code ~/.zafrida/templates}。
+ * 2. <strong>CRUD：</strong> 提供对 {@code custom/} 目录下自定义模板的增删改查 API。
+ * 3. <strong>加载：</strong> 扫描磁盘文件并构建内存中的 {@link ZaFridaTemplate} 列表供 UI 展示。
+ */
 public class ZaFridaTemplateService {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaTemplateService.class);

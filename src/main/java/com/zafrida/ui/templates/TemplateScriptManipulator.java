@@ -4,6 +4,20 @@ import com.intellij.openapi.editor.Document;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * [工具类] 脚本内容操作引擎。
+ * <p>
+ * <strong>职责：</strong>
+ * 负责在 Document 中查找、插入、注释或反注释特定的模板代码块。
+ * <p>
+ * <strong>Marker 协议：</strong>
+ * 代码块必须包裹在以下标记中，AI 生成代码时严禁修改此格式：
+ * <pre>
+ * //== ZAFrida:TEMPLATE:{id}:BEGIN ==
+ * ... content ...
+ * //== ZAFrida:TEMPLATE:{id}:END ==
+ * </pre>
+ */
 public final class TemplateScriptManipulator {
 
     private static final String TEMPLATES_BEGIN = "//== ZAFrida:TEMPLATES:BEGIN ==";

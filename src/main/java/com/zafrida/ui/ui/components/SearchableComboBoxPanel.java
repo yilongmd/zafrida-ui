@@ -11,7 +11,15 @@ import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
-
+/**
+ * [UI组件] 带搜索过滤功能的下拉框面板。
+ * <p>
+ * <strong>结构：</strong>
+ * 上方 {@link JBTextField} (搜索栏) + 下方 {@link ComboBox} (列表)。
+ * <p>
+ * <strong>用途：</strong>
+ * 当列表项过多（如项目列表或进程列表）时，允许用户通过输入文本快速过滤 ComboBox 中的选项。
+ */
 public final class SearchableComboBoxPanel<T> extends JPanel {
 
     private final JBTextField search = new JBTextField();

@@ -2,7 +2,18 @@ package com.zafrida.ui.frida;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
+/**
+ * [数据模型] Frida 目标设备实体。
+ * <p>
+ * <strong>来源：</strong> 通常由解析 <code>frida-ls-devices</code> 命令的输出生成。
+ * <p>
+ * <strong>关键逻辑：</strong>
+ * 在构建运行命令时：
+ * <ul>
+ * <li>如果 {@link #getMode()} 是 {@code DEVICE_ID} -> 使用 <code>-D device_id</code> (或 <code>-U</code>)。</li>
+ * <li>如果 {@link #getMode()} 是 {@code HOST} -> 使用 <code>-H host:port</code>。</li>
+ * </ul>
+ */
 public final class FridaDevice {
 
     private final @NotNull String id;

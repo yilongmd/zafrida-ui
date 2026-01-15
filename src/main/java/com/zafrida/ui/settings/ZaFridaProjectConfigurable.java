@@ -22,7 +22,17 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
-
+/**
+ * [UI入口] 项目级 (Per-Project) 设置面板。
+ * <p>
+ * <strong>配置层级：</strong>
+ * 存储在 {@code .idea/zafrida-project.xml} 中。
+ * <p>
+ * <strong>关键功能：</strong>
+ * 1. 设置当前项目的目标包名 (Package Name)。
+ * 2. 配置连接模式 (USB/Remote) 和特定于该项目的远程地址。
+ * 3. <strong>特色功能：</strong> 支持直接从连接的设备中拉取已安装应用列表来填充包名选择框。
+ */
 public class ZaFridaProjectConfigurable implements Configurable {
 
     private final @NotNull Project project;

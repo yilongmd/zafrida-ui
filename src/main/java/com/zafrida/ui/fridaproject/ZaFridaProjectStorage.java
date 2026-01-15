@@ -19,6 +19,15 @@ import org.jetbrains.annotations.Nullable;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * [数据层] XML 配置文件读写引擎。
+ * <p>
+ * 负责 {@code zafrida-workspace.xml} 和 {@code zafrida-project.xml} 的序列化与反序列化。
+ * <p>
+ * <strong>规范：</strong>
+ * 1. 所有写操作必须在 {@link WriteCommandAction} 或 {@link com.intellij.util.SlowOperations} 中执行。
+ * 2. 使用 JDOM 解析 XML。
+ */
 public final class ZaFridaProjectStorage {
 
     public @NotNull ZaFridaWorkspaceConfig loadWorkspace(@NotNull Project project) {

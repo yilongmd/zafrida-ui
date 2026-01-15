@@ -6,10 +6,11 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Resolved information about the project's selected Python interpreter environment.
- *
- * <p>This is used to run frida-tools (frida / frida-ps / frida-ls-devices) from the
- * same virtualenv/conda environment that PyCharm uses for the current project.</p>
+ * [DTO] Python 解释器环境描述符。
+ * <p>
+ * <strong>用途：</strong>
+ * 封装了从 IDE 项目中解析出的 Python 环境信息（Conda/Venv 根目录、bin 目录、PATH 条目）。
+ * 用于确保插件调用的 {@code frida-tools} 与用户在 PyCharm 中配置的 Python 环境一致。
  */
 public final class PythonEnvInfo {
 

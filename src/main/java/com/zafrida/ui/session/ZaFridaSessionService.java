@@ -18,6 +18,16 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
+/**
+ * [会话管理] 负责 Frida 运行时的生命周期管理。
+ * <p>
+ * <strong>功能：</strong>
+ * 1. 启动 Frida 进程并将输出流挂载到 {@link com.intellij.execution.ui.ConsoleView}。
+ * 2. 维护当前的 {@link RunningSession}，确保同一时间只有一个活跃的调试会话。
+ * 3. 负责日志持久化：将控制台输出实时写入 `zafrida-logs/` 目录。
+ * <p>
+ * <strong>线程安全：</strong> start/stop 方法是 synchronized 的。
+ */
 public final class ZaFridaSessionService implements Disposable {
 
     private final @NotNull Project project;

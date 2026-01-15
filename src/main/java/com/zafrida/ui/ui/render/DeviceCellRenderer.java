@@ -7,7 +7,15 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JList;
-
+/**
+ * [UI组件] 设备列表渲染器。
+ * <p>
+ * <strong>显示格式：</strong>
+ * <b>[Type]</b> Name (ID/Host)
+ * <br>例如：<b>[usb]</b> Pixel 6 (127.0.0.1:5555)
+ * <p>
+ * 用于 {@link com.zafrida.ui.ui.ZaFridaRunPanel} 中的设备下拉框。
+ */
 public final class DeviceCellRenderer extends ColoredListCellRenderer<FridaDevice> {
 
     @Override

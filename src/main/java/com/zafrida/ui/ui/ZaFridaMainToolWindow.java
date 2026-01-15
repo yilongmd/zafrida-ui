@@ -11,7 +11,17 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
-
+/**
+ * [UI 根组件] ZAFrida ToolWindow 的顶层容器。
+ * <p>
+ * <strong>布局结构：</strong>
+ * <ul>
+ * <li><strong>Header:</strong> 顶部工具栏（创建项目、设置、全局运行控制）。</li>
+ * <li><strong>TabPane:</strong> 中间选项卡（Run Panel / Template Panel）。</li>
+ * <li><strong>Console:</strong> 底部日志控制台 {@link ZaFridaConsolePanel}。</li>
+ * </ul>
+ * <strong>职责：</strong> 负责各子组件的初始化、布局组装及全局按钮事件的分发。
+ */
 public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
 
     private final JBTabbedPane tabbedPane;

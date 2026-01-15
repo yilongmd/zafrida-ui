@@ -2,7 +2,18 @@ package com.zafrida.ui.fridaproject;
 
 import org.jetbrains.annotations.NotNull;
 import java.util.Objects;
-
+/**
+ * [实体类] 运行时 ZAFrida 项目对象。
+ * <p>
+ * <strong>架构角色：</strong>
+ * 代表一个已加载的 Frida 子项目。
+ * <p>
+ * <strong>关键属性：</strong>
+ * <ul>
+ * <li>{@code relativeDir}: 项目根目录相对于 IDE 项目根目录的路径（例如 {@code android/MyApp}）。</li>
+ * <li>{@code platform}: 目标平台 (Android/iOS)，决定了默认的脚本模板和目录结构。</li>
+ * </ul>
+ */
 public final class ZaFridaFridaProject {
     private final @NotNull String name;
     private final @NotNull ZaFridaPlatform platform;

@@ -13,7 +13,14 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-
+/**
+ * [工具类] 项目文件操作助手。
+ * <p>
+ * <strong>核心功能：</strong>
+ * 1. 弹出文件选择器供用户选择 JS 脚本。
+ * 2. 在 {@link WriteCommandAction} 中安全地创建文件和目录。
+ * 3. 确保所有文件操作都通过 IntelliJ 的 VFS (Virtual File System) 进行，保证 IDE 索引同步。
+ */
 public final class ProjectFileUtil {
 
     private ProjectFileUtil() {

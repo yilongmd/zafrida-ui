@@ -47,6 +47,18 @@ import java.util.ArrayList;
 import java.util.List;
 import com.intellij.openapi.util.text.StringUtil;
 
+/**
+ * [UI组件] 运行控制主面板。
+ * <p>
+ * <strong>功能聚合：</strong>
+ * 集成了设备选择、脚本选择、运行模式配置（Spawn/Attach）以及运行控制按钮。
+ * <p>
+ * <strong>数据流：</strong>
+ * UI 操作 -> 更新 {@link ZaFridaProjectConfig} -> 调用 {@link FridaCliService} 执行命令。
+ * <p>
+ * <strong>注意：</strong>
+ * 刷新设备列表操作 {@link #reloadDevicesAsync()} 必须在后台线程执行，避免阻塞 EDT。
+ */
 public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private final @NotNull Project project;

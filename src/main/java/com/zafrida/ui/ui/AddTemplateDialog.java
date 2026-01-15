@@ -13,7 +13,13 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-
+/**
+ * [UI组件] "添加自定义模板" 对话框。
+ * <p>
+ * <strong>功能：</strong>
+ * 收集用户输入的模板名称和代码内容，并进行基础校验（非空检查）。
+ * 它是 {@link ZaFridaTemplatePanel} 中 "Add Template" 动作的前端界面。
+ */
 public class AddTemplateDialog extends DialogWrapper {
 
     private final JBTextField nameField;

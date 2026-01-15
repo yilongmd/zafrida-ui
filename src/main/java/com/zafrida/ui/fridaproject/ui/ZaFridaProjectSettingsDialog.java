@@ -36,7 +36,16 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import com.intellij.ui.components.JBTextField;
-
+/**
+ * [UI组件] 项目详细配置对话框。
+ * <p>
+ * <strong>功能：</strong>
+ * 编辑当前激活项目的 {@link ZaFridaProjectConfig}，包括连接模式、远程主机、目标包名等。
+ * <p>
+ * <strong>技术难点：</strong>
+ * 包含“从设备刷新进程列表”的功能。该操作涉及耗时的 Frida CLI 调用，因此必须在后台线程执行，
+ * 并通过 {@link com.intellij.openapi.application.ModalityState} 确保 UI 更新在正确的模态上下文中进行。
+ */
 public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
 
     private final Project project;

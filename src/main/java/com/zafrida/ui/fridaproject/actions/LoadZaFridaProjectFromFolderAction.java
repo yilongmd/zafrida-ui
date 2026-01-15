@@ -5,7 +5,13 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.zafrida.ui.fridaproject.ZaFridaProjectManager;
-
+/**
+ * [Action] 从文件夹加载现有项目。
+ * <p>
+ * <strong>场景：</strong>
+ * 当用户手动复制了一个项目文件夹，或者在另一台机器上打开 IDE 时，
+ * 通过右键点击文件夹将其“导入”并注册到 {@code zafrida-workspace.xml} 中。
+ */
 public final class LoadZaFridaProjectFromFolderAction extends AnAction {
 
     @Override

@@ -7,7 +7,15 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JList;
-
+/**
+ * [UI组件] 进程列表渲染器。
+ * <p>
+ * <strong>显示格式：</strong>
+ * <b>PID</b> Name (Identifier)
+ * <br>例如：<b>1234</b> com.whatsapp (WhatsApp)
+ * <p>
+ * 用于 {@link com.zafrida.ui.fridaproject.ui.ZaFridaProjectSettingsDialog} 中的目标选择下拉框。
+ */
 public final class ProcessCellRenderer extends ColoredListCellRenderer<FridaProcess> {
     @Override
     protected void customizeCellRenderer(@NotNull JList<? extends FridaProcess> list,

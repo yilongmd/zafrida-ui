@@ -1,7 +1,14 @@
 package com.zafrida.ui.frida;
 
+import com.zafrida.ui.ui.ZaFridaRunPanel;
 import org.jetbrains.annotations.NotNull;
 
+/**
+ * [DTO] Frida 运行参数聚合对象。
+ * <p>
+ * 包含运行所需的所有不可变信息：目标设备、运行模式（Spawn/Attach）、脚本路径及额外参数。
+ * 在 {@link ZaFridaRunPanel} 中构建，传递给 {@link FridaCliService} 使用。
+ */
 public final class FridaRunConfig {
 
     private final @NotNull FridaDevice device;
