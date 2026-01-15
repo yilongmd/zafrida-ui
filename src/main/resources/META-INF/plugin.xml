@@ -57,5 +57,27 @@
                 description="Load selected folder as a ZAFrida Frida project">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
+
+        <group id="ZAFrida.EditorSnippets"
+               text="ZAFrida Frida Snippets"
+               description="Insert common Frida commands into the editor popup">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+
+            <action id="ZAFrida.InsertJavaPerform"
+                    class="com.zafrida.ui.editor.actions.InsertJavaPerformAction"
+                    text="Frida: Java.perform block"/>
+            <action id="ZAFrida.InsertJavaHookMethod"
+                    class="com.zafrida.ui.editor.actions.InsertJavaHookMethodAction"
+                    text="Frida: hook Java method"/>
+            <action id="ZAFrida.InsertInterceptorAttach"
+                    class="com.zafrida.ui.editor.actions.InsertInterceptorAttachAction"
+                    text="Frida: Interceptor.attach"/>
+            <action id="ZAFrida.InsertEnumerateModules"
+                    class="com.zafrida.ui.editor.actions.InsertEnumerateModulesAction"
+                    text="Frida: enumerate modules"/>
+            <action id="ZAFrida.InsertSendLog"
+                    class="com.zafrida.ui.editor.actions.InsertSendLogAction"
+                    text="Frida: send log message"/>
+        </group>
     </actions>
 </idea-plugin>
