@@ -62,6 +62,53 @@ public final class ZaFridaProjectManager {
         return active;
     }
 
+    public @Nullable ZaFridaFridaProject findProjectByDir(@NotNull VirtualFile dir) {
+        String rel = toRelativeDir(dir);
+        if (rel == null) return null;
+        synchronized (this) {
+            for (ZaFridaFridaProject p : workspace.projects) {
+                if (rel.equals(p.getRelativeDir())) return p;
+            }
+        }
+        return null;
+    }
+
+    public @Nullable ZaFridaFridaProject registerExistingProject(@NotNull VirtualFile dir, boolean activate) {
+        String rel = toRelativeDir(dir);
+        if (rel == null) return null;
+
+        ZaFridaProjectConfig cfg = storage.loadProjectConfig(project, dir);
+        String name = StringUtil.isEmptyOrSpaces(cfg.name) ? dir.getName() : cfg.name;
+        ZaFridaPlatform platform = inferPlatform(rel, cfg.platform);
+
+        ZaFridaFridaProject target = null;
+        boolean added = false;
+        synchronized (this) {
+            for (ZaFridaFridaProject p : workspace.projects) {
+                if (rel.equals(p.getRelativeDir())) {
+                    target = p;
+                    break;
+                }
+            }
+            if (target == null) {
+                target = new ZaFridaFridaProject(name, platform, rel);
+                byName.put(target.getName(), target);
+                ZaFridaFridaProject finalTarget = target;
+                workspace.projects.removeIf(x -> x.getName().equals(finalTarget.getName()));
+                workspace.projects.add(target);
+                added = true;
+            }
+        }
+
+        if (added && !activate) {
+            storage.saveWorkspace(project, workspace);
+        }
+        if (activate && target != null) {
+            setActiveProject(target);
+        }
+        return target;
+    }
+
     public void setActiveProject(@Nullable ZaFridaFridaProject p) {
         synchronized (this) {
             active = p;
@@ -245,6 +292,22 @@ public final class ZaFridaProjectManager {
                 VfsUtil.saveText(f, content);
             }
         } catch (Throwable ignore) {}
+    }
+
+    private @Nullable String toRelativeDir(@NotNull VirtualFile dir) {
+        VirtualFile base = project.getBaseDir();
+        if (base == null) return null;
+        final String[] relRef = new String[1];
+        SlowOperations.allowSlowOperations(() -> relRef[0] = VfsUtilCore.getRelativePath(dir, base, '/'));
+        if (StringUtil.isEmptyOrSpaces(relRef[0])) return null;
+        return relRef[0];
+    }
+
+    private static @NotNull ZaFridaPlatform inferPlatform(@NotNull String relativeDir, @NotNull ZaFridaPlatform fallback) {
+        String rel = relativeDir.replace('\\', '/');
+        if (rel.equals("ios") || rel.startsWith("ios/")) return ZaFridaPlatform.IOS;
+        if (rel.equals("android") || rel.startsWith("android/")) return ZaFridaPlatform.ANDROID;
+        return fallback;
     }
 
     private static String defaultAgentSkeleton() {
