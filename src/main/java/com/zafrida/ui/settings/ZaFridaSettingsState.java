@@ -18,5 +18,5 @@ public final class ZaFridaSettingsState {
     public List<String> remoteHosts = new ArrayList<>();
     public String defaultRemoteHost = "127.0.0.1";
     public int defaultRemotePort = 14725;
-    public boolean useIdeScriptChooser = false;
+    public boolean useIdeScriptChooser = true;
 }
