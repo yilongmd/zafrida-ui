@@ -14,6 +14,8 @@ public final class ZaFridaIcons {
             IconLoader.getIcon("/META-INF/icons/platform-android.svg", ZaFridaIcons.class);
     public static final Icon IOS =
             IconLoader.getIcon("/META-INF/icons/platform-ios.svg", ZaFridaIcons.class);
+    public static final Icon RUN_FRIDA =
+            IconLoader.getIcon("/META-INF/icons/run-frida.svg", ZaFridaIcons.class);
 
     public static @Nullable Icon forPlatform(@Nullable ZaFridaPlatform platform) {
         if (platform == null) return null;

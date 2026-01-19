@@ -64,6 +64,14 @@
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
 
+        <action id="ZAFrida.RunFridaJs"
+                class="com.zafrida.ui.editor.actions.RunFridaJsAction"
+                text="Run Frida JS"
+                description="Run current JS script with ZAFrida"
+                icon="META-INF/icons/run-frida.svg">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+
         <group id="ZAFrida.EditorSnippets"
                text="ZAFrida Frida Snippets"
                description="Insert common Frida commands into the editor popup">

@@ -4,7 +4,7 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-当前版本： 0.1.0
+当前版本： 0.1.1
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)

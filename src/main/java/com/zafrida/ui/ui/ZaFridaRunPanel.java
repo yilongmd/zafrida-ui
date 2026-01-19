@@ -449,6 +449,15 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         runFrida();
     }
 
+    public void runWithScript(@NotNull VirtualFile file) {
+        if (!file.isValid() || file.isDirectory()) {
+            ZaFridaNotifier.warn(project, "ZAFrida", "Invalid script file");
+            return;
+        }
+        setScriptFile(file);
+        triggerRun();
+    }
+
     public void triggerStop() {
         if (!stopBtn.isEnabled()) return;
         stopFrida();
