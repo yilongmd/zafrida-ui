@@ -751,6 +751,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return host.trim();
     }
 
+    private static boolean isLoopbackHost(@Nullable String host) {
+        if (host == null) return false;
+        String trimmed = host.trim();
+        return "127.0.0.1".equals(trimmed) || "localhost".equalsIgnoreCase(trimmed);
+    }
+
     private static int safePort(int port) {
         return port > 0 ? port : 14725;
     }
@@ -766,7 +772,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         FridaDevice dev;
         if (connectionMode == FridaConnectionMode.REMOTE || gadgetMode) {
-            String host = resolveHostPort(projectConfig);
+            String hostValue = resolveRemoteHost(projectConfig);
+            int portValue = resolveRemotePort(projectConfig);
+            String host = hostValue + ":" + portValue;
             String type = gadgetMode ? "gadget" : "remote";
             String name = gadgetMode ? "Gadget" : "Remote";
             dev = new FridaDevice(type + ":" + host, type, name, FridaDeviceMode.HOST, host);
@@ -863,6 +871,22 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             targetPackage = target;
         }
 
+        final String finalFridaProjectDir = fridaProjectDir;
+        final String finalTargetPackage = targetPackage;
+        Runnable startSession = () -> startFridaSession(cfg, finalFridaProjectDir, finalTargetPackage);
+        boolean needsAdbForward = (connectionMode == FridaConnectionMode.REMOTE || gadgetMode)
+                && isLoopbackHost(resolveRemoteHost(projectConfig));
+        if (needsAdbForward) {
+            runAdbForward(resolveRemotePort(projectConfig), startSession);
+            return;
+        }
+
+        startSession.run();
+    }
+
+    private void startFridaSession(@NotNull FridaRunConfig cfg,
+                                   @Nullable String fridaProjectDir,
+                                   @Nullable String targetPackage) {
         try {
             RunningSession session = sessionService.start(
                     cfg,
@@ -886,6 +910,41 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    private void runAdbForward(int port, @NotNull Runnable onDone) {
+        String tcp = "tcp:" + port;
+        GeneralCommandLine cmd = new GeneralCommandLine("adb", "forward", tcp, tcp);
+        consolePanel.info("[ZAFrida] ADB forward: " + cmd.getCommandLineString());
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                CapturingProcessHandler handler = new CapturingProcessHandler(cmd);
+                ProcessOutput out = handler.runProcess(10_000);
+                String stdout = out.getStdout() != null ? out.getStdout().trim() : "";
+                String stderr = out.getStderr() != null ? out.getStderr().trim() : "";
+                int exitCode = out.getExitCode();
+
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (exitCode != 0) {
+                        consolePanel.warn("[ZAFrida] ADB forward failed (exitCode=" + exitCode + ")");
+                    } else {
+                        consolePanel.info("[ZAFrida] ADB forward ready on port " + port);
+                    }
+                    if (!stdout.isBlank()) {
+                        consolePanel.info("[ZAFrida] " + stdout);
+                    }
+                    if (!stderr.isBlank()) {
+                        consolePanel.warn("[ZAFrida] " + stderr);
+                    }
+                    onDone.run();
+                });
+            } catch (Throwable t) {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    consolePanel.warn("[ZAFrida] ADB forward failed: " + t.getMessage());
+                    onDone.run();
+                });
+            }
+        });
+    }
 
     private void stopFrida() {
         sessionService.stop();
