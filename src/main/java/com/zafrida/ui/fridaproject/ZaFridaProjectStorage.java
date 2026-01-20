@@ -151,6 +151,7 @@ public final class ZaFridaProjectStorage {
         } else {
             cfg.mainScript = mainScriptAttr;
         }
+        cfg.attachScript = root.getAttributeValue("attachScript", "");
         cfg.lastTarget = root.getAttributeValue("lastTarget");
         cfg.spawnMode = Boolean.parseBoolean(root.getAttributeValue("spawnMode", "true"));
         cfg.extraArgs = root.getAttributeValue("extraArgs", "");
@@ -179,6 +180,7 @@ public final class ZaFridaProjectStorage {
         root.setAttribute("name", cfg.name);
         root.setAttribute("platform", cfg.platform.name());
         root.setAttribute("mainScript", cfg.mainScript);
+        root.setAttribute("attachScript", cfg.attachScript == null ? "" : cfg.attachScript);
         root.setAttribute("spawnMode", String.valueOf(cfg.spawnMode));
         root.setAttribute("extraArgs", cfg.extraArgs == null ? "" : cfg.extraArgs);
         if (cfg.lastTarget != null) root.setAttribute("lastTarget", cfg.lastTarget);

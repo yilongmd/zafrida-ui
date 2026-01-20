@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
  * 存储特定 App 的逆向工程上下文：
  * <ul>
  * <li>{@code mainScript}: 入口脚本路径（相对路径）。</li>
+ * <li>{@code attachScript}: 附加脚本路径（相对路径）。</li>
  * <li>{@code connectionMode}: 连接方式 (USB/Remote)。</li>
  * <li>{@code lastTarget}: 上次调试的包名或 PID。</li>
  * </ul>
@@ -24,6 +25,9 @@ public final class ZaFridaProjectConfig {
 
     // 主脚本（相对项目文件夹）
     public @NotNull String mainScript = ZaFridaProjectFiles.DEFAULT_MAIN_SCRIPT;
+
+    // 附加脚本（相对项目文件夹）
+    public @NotNull String attachScript = "";
 
     // Run 模式：true=Spawn, false=Attach
     public boolean spawnMode = true;

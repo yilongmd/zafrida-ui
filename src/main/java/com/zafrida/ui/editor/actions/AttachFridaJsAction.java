@@ -24,9 +24,9 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
 
-public final class RunFridaJsAction extends AnAction {
+public final class AttachFridaJsAction extends AnAction {
 
-    public RunFridaJsAction() {
+    public AttachFridaJsAction() {
         getTemplatePresentation().setIcon(ZaFridaIcons.RUN_FRIDA);
     }
 
@@ -86,11 +86,11 @@ public final class RunFridaJsAction extends AnAction {
                 ZaFridaNotifier.warn(project, "ZAFrida", "ZAFrida run panel not initialized");
                 return;
             }
-            Runnable doRun = () -> runPanel.runWithRunScript(script);
+            Runnable doAttach = () -> runPanel.attachWithScript(script);
             if (switching) {
-                ApplicationManager.getApplication().invokeLater(doRun);
+                ApplicationManager.getApplication().invokeLater(doAttach);
             } else {
-                doRun.run();
+                doAttach.run();
             }
         };
 

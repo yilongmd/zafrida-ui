@@ -73,6 +73,13 @@
             <keyboard-shortcut keymap="$default" first-keystroke="control alt S"/>
             <keyboard-shortcut keymap="Mac OS X" first-keystroke="meta alt S"/>
         </action>
+        <action id="ZAFrida.AttachFridaJs"
+                class="com.zafrida.ui.editor.actions.AttachFridaJsAction"
+                text="Attach Frida JS"
+                description="Attach current JS script with ZAFrida"
+                icon="META-INF/icons/run-frida.svg">
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="ZAFrida.RunFridaJs"/>
+        </action>
 
         <group id="ZAFrida.EditorSnippets"
                text="ZAFrida Frida Snippets"
