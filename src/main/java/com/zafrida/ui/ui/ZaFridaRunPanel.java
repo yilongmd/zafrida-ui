@@ -22,6 +22,7 @@ import com.zafrida.ui.fridaproject.ui.CreateZaFridaProjectDialog;
 import com.zafrida.ui.fridaproject.ui.ZaFridaProjectSettingsDialog;
 import com.zafrida.ui.session.RunningSession;
 import com.zafrida.ui.session.ZaFridaSessionService;
+import com.zafrida.ui.session.ZaFridaSessionType;
 import com.zafrida.ui.python.ProjectPythonEnvResolver;
 import com.zafrida.ui.python.PythonEnvInfo;
 import com.zafrida.ui.ui.components.SearchableComboBoxPanel;
@@ -63,7 +64,9 @@ import com.intellij.openapi.util.text.StringUtil;
 public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private final @NotNull Project project;
-    private final @NotNull ZaFridaConsolePanel consolePanel;
+    private final @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel;
+    private final @NotNull ZaFridaConsolePanel runConsolePanel;
+    private final @NotNull ZaFridaConsolePanel attachConsolePanel;
     private final @NotNull ZaFridaTemplatePanel templatePanel;
 
     private final @NotNull FridaCliService fridaCli;
@@ -110,11 +113,13 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
 
     public ZaFridaRunPanel(@NotNull Project project,
-                           @NotNull ZaFridaConsolePanel consolePanel,
+                           @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel,
                            @NotNull ZaFridaTemplatePanel templatePanel) {
         super(new BorderLayout());
         this.project = project;
-        this.consolePanel = consolePanel;
+        this.consoleTabsPanel = consoleTabsPanel;
+        this.runConsolePanel = consoleTabsPanel.getRunConsolePanel();
+        this.attachConsolePanel = consoleTabsPanel.getAttachConsolePanel();
         this.templatePanel = templatePanel;
 
         this.fridaCli = ApplicationManager.getApplication().getService(FridaCliService.class);
@@ -159,7 +164,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         targetField.setColumns(23);
         extraArgsField.setColumns(23);
-        targetField.setToolTipText("Spawn uses package name; Attach uses PID");
+        targetField.setToolTipText("Spawn/Attach uses package name");
 
         refreshDevicesBtn.setIcon(AllIcons.Actions.Refresh);
         addRemoteBtn.setIcon(AllIcons.General.Add);
@@ -175,7 +180,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         forceStopBtn.setIcon(AllIcons.Actions.Cancel);
         openAppBtn.setIcon(AllIcons.Actions.Execute);
         clearConsoleBtn.setIcon(AllIcons.Actions.ClearCash);
-        setRunningState(false);
+        updateRunningState();
     }
 
     private JPanel buildFridaProjectRow() {
@@ -204,7 +209,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             reloadDevicesAsync();
         });
 
-        clearConsoleBtn.addActionListener(e -> consolePanel.clear());
+        clearConsoleBtn.addActionListener(e -> consoleTabsPanel.clearActiveConsole());
 
         runBtn.addActionListener(e -> runFrida());
         attachBtn.addActionListener(e -> attachFrida());
@@ -266,6 +271,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         locateRunScriptBtn.addActionListener(e -> locateRunScriptInProjectView());
         locateAttachScriptBtn.addActionListener(e -> locateAttachScriptInProjectView());
+
+        consoleTabsPanel.addTabChangeListener(e -> updateRunningState());
 
     }
 
@@ -347,7 +354,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                     setRunScriptFile(f);
                 } else {
                     // mainScript 丢失时给个提示，不强制创建，避免误操作
-                    consolePanel.warn("[ZAFrida] Main script not found in project: " + rel);
+                    runConsolePanel.warn("[ZAFrida] Main script not found in project: " + rel);
                 }
             }
             String attachRel = cfg.attachScript;
@@ -358,7 +365,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 if (f != null && !f.isDirectory()) {
                     setAttachScriptFile(f);
                 } else {
-                    consolePanel.warn("[ZAFrida] Attach script not found in project: " + attachRel);
+                    runConsolePanel.warn("[ZAFrida] Attach script not found in project: " + attachRel);
                 }
             } else {
                 attachScriptFile = null;
@@ -425,9 +432,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             reloadFridaProjectsIntoUi();
             applyActiveFridaProjectToUi(created);
 
-            consolePanel.info("[ZAFrida] Created project: " + created.getName() + " (" + created.getRelativeDir() + ")");
+            runConsolePanel.info("[ZAFrida] Created project: " + created.getName() + " (" + created.getRelativeDir() + ")");
         } catch (Throwable t) {
-            consolePanel.error("[ZAFrida] Create project failed: " + t.getMessage());
+            runConsolePanel.error("[ZAFrida] Create project failed: " + t.getMessage());
             ZaFridaNotifier.error(project, "ZAFrida", "Create project failed: " + t.getMessage());
         }
     }
@@ -438,7 +445,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 fridaProjectManager,
                 fridaCli,
                 () -> (FridaDevice) deviceCombo.getSelectedItem(),
-                consolePanel::error
+                runConsolePanel::error
         );
         if (dialog.showAndGet()) {
             applyActiveFridaProjectToUi(fridaProjectManager.getActiveProject());
@@ -513,7 +520,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     public void triggerClearConsole() {
-        consolePanel.clear();
+        consoleTabsPanel.clearActiveConsole();
     }
 
     public void bindExternalRunStopButtons(@NotNull JButton runButton, @NotNull JButton stopButton) {
@@ -666,13 +673,13 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         PythonEnvInfo env = ProjectPythonEnvResolver.resolve(project);
         if (env == null) {
-            consolePanel.warn("[ZAFrida] Project Python interpreter env not detected. Using IDE/system PATH for frida-tools.");
+            runConsolePanel.warn("[ZAFrida] Project Python interpreter env not detected. Using IDE/system PATH for frida-tools.");
             return;
         }
 
-        consolePanel.info("[ZAFrida] Project Python: " + env.getPythonHome());
+        runConsolePanel.info("[ZAFrida] Project Python: " + env.getPythonHome());
         if (!env.getPathEntries().isEmpty()) {
-            consolePanel.info("[ZAFrida] Project PATH prepend: " + String.join(File.pathSeparator, env.getPathEntries()));
+            runConsolePanel.info("[ZAFrida] Project PATH prepend: " + String.join(File.pathSeparator, env.getPathEntries()));
         }
 
         ZaFridaSettingsState st = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class).getState();
@@ -681,22 +688,22 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         String frida = ProjectPythonEnvResolver.findTool(env, st.fridaExecutable);
 
         if (ls != null) {
-            consolePanel.info("[ZAFrida] Resolved frida-ls-devices: " + ls);
+            runConsolePanel.info("[ZAFrida] Resolved frida-ls-devices: " + ls);
         } else {
-            consolePanel.warn("[ZAFrida] frida-ls-devices not found in project interpreter; will fallback to system PATH if available.");
+            runConsolePanel.warn("[ZAFrida] frida-ls-devices not found in project interpreter; will fallback to system PATH if available.");
         }
         if (ps != null) {
-            consolePanel.info("[ZAFrida] Resolved frida-ps: " + ps);
+            runConsolePanel.info("[ZAFrida] Resolved frida-ps: " + ps);
         }
         if (frida != null) {
-            consolePanel.info("[ZAFrida] Resolved frida: " + frida);
+            runConsolePanel.info("[ZAFrida] Resolved frida: " + frida);
         }
     }
 
     private void reloadDevicesAsync() {
         disableControls(true);
         printToolchainInfoOnce();
-        consolePanel.info("[ZAFrida] Loading devices...");
+        runConsolePanel.info("[ZAFrida] Loading devices...");
 
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         ZaFridaProjectConfig cfg = active != null ? fridaProjectManager.loadProjectConfig(active) : null;
@@ -733,12 +740,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                     } finally {
                         updatingDeviceCombo = false;
                     }
-                    consolePanel.info("[ZAFrida] Devices loaded: " + devices.size());
+                    runConsolePanel.info("[ZAFrida] Devices loaded: " + devices.size());
                     disableControls(false);
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() -> {
-                    consolePanel.error("[ZAFrida] Load devices failed: " + t.getMessage());
+                    runConsolePanel.error("[ZAFrida] Load devices failed: " + t.getMessage());
                     disableControls(false);
                 });
             }
@@ -752,7 +759,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         if (gadgetMode) {
             targetField.setToolTipText("Gadget mode uses -F; target is ignored.");
         } else {
-            targetField.setToolTipText(null);
+            targetField.setToolTipText("Spawn/Attach uses package name");
         }
     }
 
@@ -899,13 +906,15 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             targetPackage = target;
         }
 
+        ZaFridaConsolePanel console = runConsolePanel;
+        consoleTabsPanel.showRunConsole();
         final String finalFridaProjectDir = fridaProjectDir;
         final String finalTargetPackage = targetPackage;
-        Runnable startSession = () -> startFridaSession(cfg, finalFridaProjectDir, finalTargetPackage);
+        Runnable startSession = () -> startFridaSession(ZaFridaSessionType.RUN, cfg, console, finalFridaProjectDir, finalTargetPackage);
         boolean needsAdbForward = (connectionMode == FridaConnectionMode.REMOTE || gadgetMode)
                 && isLoopbackHost(resolveRemoteHost(projectConfig));
         if (needsAdbForward) {
-            runAdbForward(resolveRemotePort(projectConfig), startSession);
+            runAdbForward(resolveRemotePort(projectConfig), console, startSession);
             return;
         }
 
@@ -941,18 +950,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 fridaProjectManager.updateProjectConfig(active, c -> c.attachScript = rel);
             }
         }
-
-        FridaRunMode mode;
-        if (gadgetMode) {
-            mode = new FrontmostRunMode();
-        } else {
-            try {
-                mode = new AttachPidRunMode(Integer.parseInt(target));
-            } catch (NumberFormatException e) {
-                ZaFridaNotifier.warn(project, "ZAFrida", "Attach requires PID integer");
-                return;
-            }
+        if (active != null && !gadgetMode) {
+            fridaProjectManager.updateProjectConfig(active, c -> c.lastTarget = target);
         }
+
+        FridaRunMode mode = gadgetMode ? new FrontmostRunMode() : new AttachNameRunMode(target);
 
         FridaRunConfig cfg = new FridaRunConfig(
                 dev,
@@ -969,12 +971,16 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             }
         }
 
+        ZaFridaConsolePanel console = attachConsolePanel;
+        consoleTabsPanel.showAttachConsole();
+        String targetPackage = (!gadgetMode && !target.isEmpty()) ? target : null;
         final String finalFridaProjectDir = fridaProjectDir;
-        Runnable startSession = () -> startFridaSession(cfg, finalFridaProjectDir, null);
+        final String finalTargetPackage = targetPackage;
+        Runnable startSession = () -> startFridaSession(ZaFridaSessionType.ATTACH, cfg, console, finalFridaProjectDir, finalTargetPackage);
         boolean needsAdbForward = (connectionMode == FridaConnectionMode.REMOTE || gadgetMode)
                 && isLoopbackHost(resolveRemoteHost(projectConfig));
         if (needsAdbForward) {
-            runAdbForward(resolveRemotePort(projectConfig), startSession);
+            runAdbForward(resolveRemotePort(projectConfig), console, startSession);
             return;
         }
 
@@ -1044,36 +1050,37 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return script;
     }
 
-    private void startFridaSession(@NotNull FridaRunConfig cfg,
+    private void startFridaSession(@NotNull ZaFridaSessionType type,
+                                   @NotNull FridaRunConfig cfg,
+                                   @NotNull ZaFridaConsolePanel console,
                                    @Nullable String fridaProjectDir,
                                    @Nullable String targetPackage) {
         try {
             RunningSession session = sessionService.start(
+                    type,
                     cfg,
-                    consolePanel.getConsoleView(),
-                    consolePanel::info,
-                    consolePanel::error,
+                    console.getConsoleView(),
+                    console::info,
+                    console::error,
                     fridaProjectDir,
                     targetPackage
             );
 
-            session.getProcessHandler().addProcessListener(sessionService.createUiStateListener(() -> {
-                setRunningState(false);
-            }));
+            session.getProcessHandler().addProcessListener(sessionService.createUiStateListener(this::updateRunningState));
 
-            setRunningState(true);
+            updateRunningState();
             logFileLabel.setText("Log: " + session.getLogFilePath());
-            consolePanel.info("[ZAFrida] Log file: " + session.getLogFilePath());
+            console.info("[ZAFrida] Log file: " + session.getLogFilePath());
         } catch (Throwable t) {
-            consolePanel.error("[ZAFrida] Start failed: " + t.getMessage());
+            console.error("[ZAFrida] Start failed: " + t.getMessage());
             ZaFridaNotifier.error(project, "ZAFrida", "Start failed: " + t.getMessage());
         }
     }
 
-    private void runAdbForward(int port, @NotNull Runnable onDone) {
+    private void runAdbForward(int port, @NotNull ZaFridaConsolePanel console, @NotNull Runnable onDone) {
         String tcp = "tcp:" + port;
         GeneralCommandLine cmd = new GeneralCommandLine("adb", "forward", tcp, tcp);
-        consolePanel.info("[ZAFrida] ADB forward: " + cmd.getCommandLineString());
+        console.info("[ZAFrida] ADB forward: " + cmd.getCommandLineString());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
@@ -1085,21 +1092,21 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
                 ApplicationManager.getApplication().invokeLater(() -> {
                     if (exitCode != 0) {
-                        consolePanel.warn("[ZAFrida] ADB forward failed (exitCode=" + exitCode + ")");
+                        console.warn("[ZAFrida] ADB forward failed (exitCode=" + exitCode + ")");
                     } else {
-                        consolePanel.info("[ZAFrida] ADB forward ready on port " + port);
+                        console.info("[ZAFrida] ADB forward ready on port " + port);
                     }
                     if (!stdout.isBlank()) {
-                        consolePanel.info("[ZAFrida] " + stdout);
+                        console.info("[ZAFrida] " + stdout);
                     }
                     if (!stderr.isBlank()) {
-                        consolePanel.warn("[ZAFrida] " + stderr);
+                        console.warn("[ZAFrida] " + stderr);
                     }
                     onDone.run();
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() -> {
-                    consolePanel.warn("[ZAFrida] ADB forward failed: " + t.getMessage());
+                    console.warn("[ZAFrida] ADB forward failed: " + t.getMessage());
                     onDone.run();
                 });
             }
@@ -1107,9 +1114,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     private void stopFrida() {
-        sessionService.stop();
-        setRunningState(false);
-        consolePanel.info("[ZAFrida] Stopped");
+        ZaFridaSessionType type = resolveActiveSessionType();
+        sessionService.stop(type);
+        updateRunningState();
+        resolveConsoleForSessionType(type).info("[ZAFrida] Stopped");
     }
 
     private void forceStopApp() {
@@ -1118,7 +1126,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         String packageName = resolveForceStopPackage(projectConfig);
         if (StringUtil.isEmptyOrSpaces(packageName)) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Force stop requires a package name");
-            consolePanel.warn("[ZAFrida] Force stop requires a package name.");
+            runConsolePanel.warn("[ZAFrida] Force stop requires a package name.");
             return;
         }
 
@@ -1143,7 +1151,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         args.add(packageName);
 
         GeneralCommandLine cmd = new GeneralCommandLine(args);
-        consolePanel.info("[ZAFrida] Force stop command: " + cmd.getCommandLineString());
+        runConsolePanel.info("[ZAFrida] Force stop command: " + cmd.getCommandLineString());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
@@ -1154,19 +1162,19 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 int exitCode = out.getExitCode();
                 ApplicationManager.getApplication().invokeLater(() -> {
                     if (exitCode == 0) {
-                        consolePanel.info("[ZAFrida] Force stopped: " + packageName);
+                        runConsolePanel.info("[ZAFrida] Force stopped: " + packageName);
                         if (!stdout.isBlank()) {
-                            consolePanel.info(stdout);
+                            runConsolePanel.info(stdout);
                         }
                     } else {
                         String detail = !stderr.isBlank() ? stderr : stdout;
                         if (detail.isBlank()) detail = "unknown error";
-                        consolePanel.error("[ZAFrida] Force stop failed (exit=" + exitCode + "): " + detail);
+                        runConsolePanel.error("[ZAFrida] Force stop failed (exit=" + exitCode + "): " + detail);
                     }
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() ->
-                        consolePanel.error("[ZAFrida] Force stop failed: " + t.getMessage())
+                        runConsolePanel.error("[ZAFrida] Force stop failed: " + t.getMessage())
                 );
             }
         });
@@ -1178,7 +1186,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         String packageName = resolveForceStopPackage(projectConfig);
         if (StringUtil.isEmptyOrSpaces(packageName)) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Open app requires a package name");
-            consolePanel.warn("[ZAFrida] Open app requires a package name.");
+            runConsolePanel.warn("[ZAFrida] Open app requires a package name.");
             return;
         }
 
@@ -1206,7 +1214,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         args.add("1");
 
         GeneralCommandLine cmd = new GeneralCommandLine(args);
-        consolePanel.info("[ZAFrida] Open app command: " + cmd.getCommandLineString());
+        runConsolePanel.info("[ZAFrida] Open app command: " + cmd.getCommandLineString());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
@@ -1217,19 +1225,19 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 int exitCode = out.getExitCode();
                 ApplicationManager.getApplication().invokeLater(() -> {
                     if (exitCode == 0) {
-                        consolePanel.info("[ZAFrida] Opened app: " + packageName);
+                        runConsolePanel.info("[ZAFrida] Opened app: " + packageName);
                         if (!stdout.isBlank()) {
-                            consolePanel.info(stdout);
+                            runConsolePanel.info(stdout);
                         }
                     } else {
                         String detail = !stderr.isBlank() ? stderr : stdout;
                         if (detail.isBlank()) detail = "unknown error";
-                        consolePanel.error("[ZAFrida] Open app failed (exit=" + exitCode + "): " + detail);
+                        runConsolePanel.error("[ZAFrida] Open app failed (exit=" + exitCode + "): " + detail);
                     }
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() ->
-                        consolePanel.error("[ZAFrida] Open app failed: " + t.getMessage())
+                        runConsolePanel.error("[ZAFrida] Open app failed: " + t.getMessage())
                 );
             }
         });
@@ -1254,11 +1262,23 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return !value.isEmpty();
     }
 
-    private void setRunningState(boolean running) {
-        runBtn.setEnabled(!running);
-        attachBtn.setEnabled(!running);
-        stopBtn.setEnabled(running);
+    private void updateRunningState() {
+        boolean runRunning = sessionService.isRunning(ZaFridaSessionType.RUN);
+        boolean attachRunning = sessionService.isRunning(ZaFridaSessionType.ATTACH);
+        runBtn.setEnabled(!runRunning);
+        attachBtn.setEnabled(!attachRunning);
+        stopBtn.setEnabled(sessionService.isRunning(resolveActiveSessionType()));
         syncExternalRunStopButtons();
+    }
+
+    private @NotNull ZaFridaSessionType resolveActiveSessionType() {
+        return consoleTabsPanel.getActiveConsolePanel() == attachConsolePanel
+                ? ZaFridaSessionType.ATTACH
+                : ZaFridaSessionType.RUN;
+    }
+
+    private @NotNull ZaFridaConsolePanel resolveConsoleForSessionType(@NotNull ZaFridaSessionType type) {
+        return type == ZaFridaSessionType.ATTACH ? attachConsolePanel : runConsolePanel;
     }
 
     private void syncExternalRunStopButtons() {

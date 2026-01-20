@@ -4,7 +4,7 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-当前版本： 0.1.5
+当前版本： 0.1.6
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -47,7 +47,7 @@ ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，�
 * **设备与进程管理**: 集成 `frida-ls-devices` 和 `frida-ps`，支持一键刷新设备列表，查看运行进程、正在运行的 App 或已安装的应用。
 * **多模式连接**: 完美支持 **USB**、**Remote** (远程主机)、**Gadget** 模式，支持自定义远程 Host 和 Port，无需繁琐的命令行参数。
 * **交互式脚本运行**:
-  * 支持 **Spawn** (`-f`) 和 **Attach** (`-p`/`-n`) 模式。
+  * 支持 **Spawn** (`-f`) 和 **Attach** (`-p`/`-N`) 模式。
   * 支持 **Force Stop** 强制停止目标应用。
   * 内置控制台日志输出，并自动保存日志文件到项目目录 `zafrida-logs/`。
 * **动态模板系统 (核心创新)**:

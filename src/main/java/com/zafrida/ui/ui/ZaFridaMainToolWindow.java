@@ -18,7 +18,7 @@ import java.awt.*;
  * <ul>
  * <li><strong>Header:</strong> 顶部工具栏（创建项目、设置、全局运行控制）。</li>
  * <li><strong>TabPane:</strong> 中间选项卡（Run Panel / Template Panel）。</li>
- * <li><strong>Console:</strong> 底部日志控制台 {@link ZaFridaConsolePanel}。</li>
+ * <li><strong>Console:</strong> 底部日志控制台（Run/Attach 分离）。</li>
  * </ul>
  * <strong>职责：</strong> 负责各子组件的初始化、布局组装及全局按钮事件的分发。
  */
@@ -27,16 +27,16 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
     private final JBTabbedPane tabbedPane;
     private final ZaFridaRunPanel runPanel;
     private final ZaFridaTemplatePanel templatePanel;
-    private final ZaFridaConsolePanel consolePanel;
+    private final ZaFridaConsoleTabsPanel consoleTabsPanel;
 
     public ZaFridaMainToolWindow(@NotNull Project project) {
         super(new BorderLayout());
 
-        this.consolePanel = new ZaFridaConsolePanel(project);
-        this.templatePanel = new ZaFridaTemplatePanel(project, consolePanel);
-        this.runPanel = new ZaFridaRunPanel(project, consolePanel, templatePanel);
+        this.consoleTabsPanel = new ZaFridaConsoleTabsPanel(project);
+        this.templatePanel = new ZaFridaTemplatePanel(project, consoleTabsPanel.getRunConsolePanel());
+        this.runPanel = new ZaFridaRunPanel(project, consoleTabsPanel, templatePanel);
 
-        Disposer.register(this, consolePanel);
+        Disposer.register(this, consoleTabsPanel);
         Disposer.register(this, runPanel);
 
         tabbedPane = new JBTabbedPane();
@@ -52,7 +52,7 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
         splitPane.setTopComponent(topContainer);
-        splitPane.setBottomComponent(consolePanel);
+        splitPane.setBottomComponent(consoleTabsPanel);
         splitPane.setResizeWeight(0.6);
         splitPane.setDividerSize(JBUI.scale(4));
         splitPane.setBorder(JBUI.Borders.empty());
@@ -60,8 +60,8 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         add(splitPane, BorderLayout.CENTER);
     }
 
-    public @NotNull ZaFridaConsolePanel getConsolePanel() {
-        return consolePanel;
+    public @NotNull ZaFridaConsoleTabsPanel getConsoleTabsPanel() {
+        return consoleTabsPanel;
     }
 
     public @NotNull ZaFridaRunPanel getRunPanel() {

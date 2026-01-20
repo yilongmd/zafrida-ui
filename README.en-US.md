@@ -4,7 +4,7 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-Current Version: 0.1.5
+Current Version: 0.1.6
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -47,7 +47,7 @@ Features
 * **Device & Process Management**: Integrated with `frida-ls-devices` and `frida-ps`. Supports one-click refresh of device lists and viewing running processes, running apps, or installed applications.
 * **Multi-Mode Connection**: Full support for **USB**, **Remote**, and **Gadget** modes. Supports custom Remote Host and Port without complex command-line arguments.
 * **Interactive Script Execution**:
-    * Supports **Spawn** (`-f`) and **Attach** (`-p`/`-n`) modes.
+    * Supports **Spawn** (`-f`) and **Attach** (`-p`/`-N`) modes.
     * Supports **Force Stop** for target applications.
     * Built-in console log output with automatic log saving to the `zafrida-logs/` directory.
 * **Dynamic Template System (Core Innovation)**:

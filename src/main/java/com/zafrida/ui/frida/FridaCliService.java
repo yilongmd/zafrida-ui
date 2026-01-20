@@ -69,7 +69,7 @@ public final class FridaCliService {
         } else if (mode instanceof AttachPidRunMode) {
             cmd.addParameters("-p", String.valueOf(((AttachPidRunMode) mode).getPid()));
         } else if (mode instanceof AttachNameRunMode) {
-            cmd.addParameters("-n", ((AttachNameRunMode) mode).getName());
+            cmd.addParameters("-N", ((AttachNameRunMode) mode).getName());
         } else {
             throw new IllegalArgumentException("Unknown run mode: " + mode);
         }

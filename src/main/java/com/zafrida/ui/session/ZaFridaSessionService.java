@@ -16,6 +16,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.function.Consumer;
 
 /**
@@ -23,7 +24,7 @@ import java.util.function.Consumer;
  * <p>
  * <strong>功能：</strong>
  * 1. 启动 Frida 进程并将输出流挂载到 {@link com.intellij.execution.ui.ConsoleView}。
- * 2. 维护当前的 {@link RunningSession}，确保同一时间只有一个活跃的调试会话。
+ * 2. 维护 Run/Attach 两类 {@link RunningSession}。
  * 3. 负责日志持久化：将控制台输出实时写入 `zafrida-logs/` 目录。
  * <p>
  * <strong>线程安全：</strong> start/stop 方法是 synchronized 的。
@@ -33,21 +34,22 @@ public final class ZaFridaSessionService implements Disposable {
     private final @NotNull Project project;
     private final @NotNull FridaCliService fridaCliService;
 
-    private @Nullable RunningSession current;
-    private @Nullable SessionLogWriter logWriter;
+    private final EnumMap<ZaFridaSessionType, RunningSession> sessions = new EnumMap<>(ZaFridaSessionType.class);
+    private final EnumMap<ZaFridaSessionType, SessionLogWriter> logWriters = new EnumMap<>(ZaFridaSessionType.class);
 
     public ZaFridaSessionService(@NotNull Project project) {
         this.project = project;
         this.fridaCliService = ApplicationManager.getApplication().getService(FridaCliService.class);
     }
 
-    public synchronized @NotNull RunningSession start(@NotNull FridaRunConfig config,
+    public synchronized @NotNull RunningSession start(@NotNull ZaFridaSessionType type,
+                                                      @NotNull FridaRunConfig config,
                                                       @NotNull ConsoleView consoleView,
                                                       @NotNull Consumer<String> info,
                                                       @NotNull Consumer<String> error,
                                                       @Nullable String fridaProjectDir,
                                                       @Nullable String targetPackage) throws Exception {
-        stop();
+        stop(type);
 
         String basePath = project.getBasePath();
         Path logFile = basePath != null ? ZaFridaLogPaths.newSessionLogFile(basePath, fridaProjectDir, targetPackage) : null;
@@ -57,7 +59,9 @@ public final class ZaFridaSessionService implements Disposable {
         if (logFile != null) {
             writer = new SessionLogWriter(logFile);
         }
-        this.logWriter = writer;
+        if (writer != null) {
+            logWriters.put(type, writer);
+        }
 
         // show command line
         String cmdLine = fridaCliService.buildRunCommandLine(project, config).getCommandLineString();
@@ -80,6 +84,16 @@ public final class ZaFridaSessionService implements Disposable {
                     finalWriter.append("\n[ZAFrida] Process terminated (exitCode=" + event.getExitCode() + ")\n");
                     finalWriter.close();
                 }
+                synchronized (ZaFridaSessionService.this) {
+                    RunningSession current = sessions.get(type);
+                    if (current != null && current.getProcessHandler() == handler) {
+                        sessions.remove(type);
+                    }
+                    SessionLogWriter currentWriter = logWriters.get(type);
+                    if (currentWriter == finalWriter) {
+                        logWriters.remove(type);
+                    }
+                }
             }
         });
 
@@ -87,29 +101,40 @@ public final class ZaFridaSessionService implements Disposable {
         handler.startNotify();
 
         RunningSession session = new RunningSession(handler, logPathStr);
-        this.current = session;
+        sessions.put(type, session);
         return session;
     }
 
-    public synchronized void stop() {
-        if (current != null) {
-            ProcessHandler handler = current.getProcessHandler();
+    public synchronized void stop(@NotNull ZaFridaSessionType type) {
+        RunningSession session = sessions.remove(type);
+        if (session != null) {
+            ProcessHandler handler = session.getProcessHandler();
             if (!handler.isProcessTerminated()) {
                 try {
                     handler.destroyProcess();
                 } catch (Throwable ignored) {
                 }
             }
-            current = null;
         }
 
-        if (logWriter != null) {
+        SessionLogWriter writer = logWriters.remove(type);
+        if (writer != null) {
             try {
-                logWriter.close();
+                writer.close();
             } catch (Throwable ignored) {
             }
-            logWriter = null;
         }
+    }
+
+    public synchronized void stop() {
+        for (ZaFridaSessionType type : ZaFridaSessionType.values()) {
+            stop(type);
+        }
+    }
+
+    public synchronized boolean isRunning(@NotNull ZaFridaSessionType type) {
+        RunningSession session = sessions.get(type);
+        return session != null && !session.getProcessHandler().isProcessTerminated();
     }
 
     public @NotNull ProcessAdapter createUiStateListener(@NotNull Runnable onTerminated) {

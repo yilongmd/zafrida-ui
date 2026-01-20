@@ -18,17 +18,17 @@ import java.awt.BorderLayout;
  */
 public final class ZaFridaToolWindowPanel extends JPanel implements Disposable {
 
-    private final ZaFridaConsolePanel consolePanel;
+    private final ZaFridaConsoleTabsPanel consoleTabsPanel;
     private final ZaFridaTemplatePanel templatePanel;
     private final ZaFridaRunPanel runPanel;
 
     public ZaFridaToolWindowPanel(Project project) {
         super(new BorderLayout());
 
-        // consolePanel 必须先初始化，因为 templatePanel 需要它
-        this.consolePanel = new ZaFridaConsolePanel(project);
-        this.templatePanel = new ZaFridaTemplatePanel(project, consolePanel);
-        this.runPanel = new ZaFridaRunPanel(project, consolePanel, templatePanel);
+        // consoleTabsPanel 必须先初始化，因为 templatePanel/runPanel 需要它
+        this.consoleTabsPanel = new ZaFridaConsoleTabsPanel(project);
+        this.templatePanel = new ZaFridaTemplatePanel(project, consoleTabsPanel.getRunConsolePanel());
+        this.runPanel = new ZaFridaRunPanel(project, consoleTabsPanel, templatePanel);
 
         // top: run + templates
         JBSplitter topSplitter = new JBSplitter(false, 0.55f);
@@ -38,7 +38,7 @@ public final class ZaFridaToolWindowPanel extends JPanel implements Disposable {
         // main: (top) + (bottom console)
         JBSplitter mainSplitter = new JBSplitter(true, 0.60f);
         mainSplitter.setFirstComponent(topSplitter);
-        mainSplitter.setSecondComponent(consolePanel);
+        mainSplitter.setSecondComponent(consoleTabsPanel);
 
         add(mainSplitter, BorderLayout.CENTER);
     }
@@ -47,6 +47,6 @@ public final class ZaFridaToolWindowPanel extends JPanel implements Disposable {
     public void dispose() {
         runPanel.dispose();
         templatePanel.dispose();
-        consolePanel.dispose();
+        consoleTabsPanel.dispose();
     }
 }
