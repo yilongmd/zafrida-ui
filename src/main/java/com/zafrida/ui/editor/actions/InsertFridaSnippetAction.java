@@ -18,13 +18,23 @@ import org.jetbrains.annotations.NotNull;
  * 3. <strong>事务管理：</strong> 封装 {@link WriteCommandAction}，确保文件修改操作符合 IntelliJ 线程规范。
  */
 public abstract class InsertFridaSnippetAction extends AnAction {
+    /** 插入的代码片段 */
     private final @NotNull String snippet;
 
+    /**
+     * 构造函数。
+     * @param text 菜单显示文本
+     * @param snippet 代码片段内容
+     */
     protected InsertFridaSnippetAction(@NotNull String text, @NotNull String snippet) {
         super(text);
         this.snippet = snippet;
     }
 
+    /**
+     * 菜单执行逻辑。
+     * @param e Action 事件
+     */
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -40,6 +50,10 @@ public abstract class InsertFridaSnippetAction extends AnAction {
         editor.getCaretModel().moveToOffset(offset + insertion.length());
     }
 
+    /**
+     * 菜单可用性更新逻辑。
+     * @param e Action 事件
+     */
     @Override
     public void update(@NotNull AnActionEvent e) {
         Editor editor = e.getData(CommonDataKeys.EDITOR);
@@ -48,6 +62,13 @@ public abstract class InsertFridaSnippetAction extends AnAction {
         e.getPresentation().setEnabledAndVisible(enabled);
     }
 
+    /**
+     * 根据光标位置为片段补齐换行。
+     * @param document 编辑器文档
+     * @param offset 插入位置
+     * @param snippet 代码片段
+     * @return 处理后的片段
+     */
     private static @NotNull String applyLinePadding(@NotNull Document document, int offset, @NotNull String snippet) {
         CharSequence content = document.getCharsSequence();
         String prefix = needsLeadingNewline(content, offset) ? "\n" : "";
@@ -55,10 +76,22 @@ public abstract class InsertFridaSnippetAction extends AnAction {
         return prefix + snippet + suffix;
     }
 
+    /**
+     * 判断是否需要在前方补换行。
+     * @param content 文档内容
+     * @param offset 插入位置
+     * @return true 表示需要
+     */
     private static boolean needsLeadingNewline(@NotNull CharSequence content, int offset) {
         return offset > 0 && content.charAt(offset - 1) != '\n';
     }
 
+    /**
+     * 判断是否需要在后方补换行。
+     * @param content 文档内容
+     * @param offset 插入位置
+     * @return true 表示需要
+     */
     private static boolean needsTrailingNewline(@NotNull CharSequence content, int offset) {
         return offset < content.length() && content.charAt(offset) != '\n';
     }

@@ -30,6 +30,11 @@ import java.nio.charset.StandardCharsets;
  */
 public final class ZaFridaProjectStorage {
 
+    /**
+     * 加载工作区配置。
+     * @param project 当前 IDE 项目
+     * @return 工作区配置
+     */
     public @NotNull ZaFridaWorkspaceConfig loadWorkspace(@NotNull Project project) {
         final ZaFridaWorkspaceConfig[] out = new ZaFridaWorkspaceConfig[]{new ZaFridaWorkspaceConfig()};
         SlowOperations.allowSlowOperations(() -> {
@@ -47,6 +52,11 @@ public final class ZaFridaProjectStorage {
         return out[0] != null ? out[0] : new ZaFridaWorkspaceConfig();
     }
 
+    /**
+     * 保存工作区配置。
+     * @param project 当前 IDE 项目
+     * @param cfg 工作区配置
+     */
     public void saveWorkspace(@NotNull Project project, @NotNull ZaFridaWorkspaceConfig cfg) {
         VirtualFile base = project.getBaseDir();
         if (base == null) return;
@@ -61,6 +71,12 @@ public final class ZaFridaProjectStorage {
         );
     }
 
+    /**
+     * 加载指定 Frida 项目的配置。
+     * @param project 当前 IDE 项目
+     * @param fridaProjectDir Frida 项目目录
+     * @return 项目配置
+     */
     public @NotNull ZaFridaProjectConfig loadProjectConfig(@NotNull Project project, @NotNull VirtualFile fridaProjectDir) {
         final ZaFridaProjectConfig[] out = new ZaFridaProjectConfig[1];
         SlowOperations.allowSlowOperations(() -> {
@@ -91,6 +107,12 @@ public final class ZaFridaProjectStorage {
         return c;
     }
 
+    /**
+     * 保存指定 Frida 项目的配置。
+     * @param project 当前 IDE 项目
+     * @param fridaProjectDir Frida 项目目录
+     * @param cfg 项目配置
+     */
     public void saveProjectConfig(@NotNull Project project, @NotNull VirtualFile fridaProjectDir, @NotNull ZaFridaProjectConfig cfg) {
         WriteCommandAction.runWriteCommandAction(project, () ->
                 SlowOperations.allowSlowOperations(() -> {
@@ -103,11 +125,23 @@ public final class ZaFridaProjectStorage {
         );
     }
 
+    /**
+     * 计算相对路径。
+     * @param baseDir 基准目录
+     * @param file 目标文件
+     * @return 相对路径或 null
+     */
     public @Nullable String relativize(@NotNull VirtualFile baseDir, @NotNull VirtualFile file) {
         return VfsUtilCore.getRelativePath(file, baseDir, '/');
     }
 
     // ---------------- XML format ----------------
+    // ---------------- XML 格式 ----------------
+    /**
+     * 解析工作区 XML。
+     * @param xml XML 内容
+     * @return 工作区配置
+     */
     private ZaFridaWorkspaceConfig parseWorkspace(String xml) throws Exception {
         Document doc = new SAXBuilder().build(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
         Element root = doc.getRootElement();
@@ -124,6 +158,11 @@ public final class ZaFridaProjectStorage {
         return cfg;
     }
 
+    /**
+     * 序列化工作区配置为 XML。
+     * @param cfg 工作区配置
+     * @return XML 字符串
+     */
     private String toWorkspaceXml(ZaFridaWorkspaceConfig cfg) {
         Element root = new Element("zafridaWorkspace");
         root.setAttribute("version", String.valueOf(ZaFridaWorkspaceConfig.VERSION));
@@ -139,6 +178,11 @@ public final class ZaFridaProjectStorage {
         return new XMLOutputter(Format.getPrettyFormat()).outputString(new Document(root));
     }
 
+    /**
+     * 解析项目 XML。
+     * @param xml XML 内容
+     * @return 项目配置
+     */
     private ZaFridaProjectConfig parseProject(String xml) throws Exception {
         Document doc = new SAXBuilder().build(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
         Element root = doc.getRootElement();
@@ -174,6 +218,11 @@ public final class ZaFridaProjectStorage {
         return cfg;
     }
 
+    /**
+     * 序列化项目配置为 XML。
+     * @param cfg 项目配置
+     * @return XML 字符串
+     */
     private String toProjectXml(ZaFridaProjectConfig cfg) {
         Element root = new Element("zafridaProject");
         root.setAttribute("version", String.valueOf(ZaFridaProjectConfig.VERSION));
@@ -194,6 +243,12 @@ public final class ZaFridaProjectStorage {
         return new XMLOutputter(Format.getPrettyFormat()).outputString(new Document(root));
     }
 
+    /**
+     * 安全解析整数。
+     * @param value 字符串值
+     * @param fallback 解析失败时的回退值
+     * @return 解析结果
+     */
     private static int parseInt(@Nullable String value, int fallback) {
         if (value == null || value.isBlank()) return fallback;
         try {
@@ -204,6 +259,11 @@ public final class ZaFridaProjectStorage {
     }
 
     // 仅在外层已经处于 write-action 时调用
+    /**
+     * 在已处于写操作上下文时保存工作区配置。
+     * @param baseDir 项目根目录
+     * @param cfg 工作区配置
+     */
     public void saveWorkspaceNoWriteAction(@NotNull VirtualFile baseDir, @NotNull ZaFridaWorkspaceConfig cfg) {
         SlowOperations.allowSlowOperations(() -> {
             try {
@@ -215,6 +275,11 @@ public final class ZaFridaProjectStorage {
     }
 
     // 仅在外层已经处于 write-action 时调用
+    /**
+     * 在已处于写操作上下文时保存项目配置。
+     * @param fridaProjectDir Frida 项目目录
+     * @param cfg 项目配置
+     */
     public void saveProjectConfigNoWriteAction(@NotNull VirtualFile fridaProjectDir, @NotNull ZaFridaProjectConfig cfg) {
         SlowOperations.allowSlowOperations(() -> {
             try {

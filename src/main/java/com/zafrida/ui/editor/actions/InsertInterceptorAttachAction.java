@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
  * <strong>依赖：</strong> 通常配合 {@code Module.findExportByName} 使用。
  */
 public class InsertInterceptorAttachAction extends InsertFridaSnippetAction {
+    /** 内置代码片段 */
     private static final @NotNull String SNIPPET = String.join("\n",
             """
                     Interceptor.attach(Module.findExportByName(null, "open"), {
@@ -24,6 +25,9 @@ public class InsertInterceptorAttachAction extends InsertFridaSnippetAction {
                     """
     );
 
+    /**
+     * 构造函数。
+     */
     public InsertInterceptorAttachAction() {
         super("Frida: Interceptor.attach", SNIPPET);
     }

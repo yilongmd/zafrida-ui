@@ -10,7 +10,10 @@ package com.zafrida.ui.frida;
  * </ul>
  */
 public enum FridaProcessScope {
+    /** 所有运行中进程 */
     RUNNING_PROCESSES,
+    /** 运行中的前台应用 */
     RUNNING_APPS,
+    /** 已安装应用（含未运行） */
     INSTALLED_APPS
 }

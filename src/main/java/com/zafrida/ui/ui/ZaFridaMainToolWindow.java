@@ -24,11 +24,19 @@ import java.awt.*;
  */
 public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
 
+    /** 顶部选项卡面板 */
     private final JBTabbedPane tabbedPane;
+    /** Run 面板 */
     private final ZaFridaRunPanel runPanel;
+    /** 模板面板 */
     private final ZaFridaTemplatePanel templatePanel;
+    /** 控制台选项卡面板 */
     private final ZaFridaConsoleTabsPanel consoleTabsPanel;
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     */
     public ZaFridaMainToolWindow(@NotNull Project project) {
         super(new BorderLayout());
 
@@ -60,18 +68,34 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         add(splitPane, BorderLayout.CENTER);
     }
 
+    /**
+     * 获取控制台选项卡面板。
+     * @return 控制台面板
+     */
     public @NotNull ZaFridaConsoleTabsPanel getConsoleTabsPanel() {
         return consoleTabsPanel;
     }
 
+    /**
+     * 获取 Run 面板。
+     * @return Run 面板
+     */
     public @NotNull ZaFridaRunPanel getRunPanel() {
         return runPanel;
     }
 
+    /**
+     * 获取模板面板。
+     * @return 模板面板
+     */
     public @NotNull ZaFridaTemplatePanel getTemplatePanel() {
         return templatePanel;
     }
 
+    /**
+     * 构建顶部工具栏区域。
+     * @return Header 面板
+     */
     private JPanel buildHeader() {
         JPanel header = new JPanel();
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
@@ -137,8 +161,12 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         return header;
     }
 
+    /**
+     * 释放资源。
+     */
     @Override
     public void dispose() {
         // children disposed via Disposer
+        // 子组件由 Disposer 统一释放
     }
 }

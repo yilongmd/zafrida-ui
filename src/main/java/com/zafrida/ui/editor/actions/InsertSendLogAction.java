@@ -12,10 +12,14 @@ import org.jetbrains.annotations.NotNull;
  * 适合传输需要宿主进一步处理的 Payload。
  */
 public class InsertSendLogAction extends InsertFridaSnippetAction {
+    /** 内置代码片段 */
     private static final @NotNull String SNIPPET = """
             send({ type: "log", payload: "hello from frida" });
             """;
 
+    /**
+     * 构造函数。
+     */
     public InsertSendLogAction() {
         super("Frida: send log message", SNIPPET);
     }

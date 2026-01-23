@@ -65,11 +65,13 @@ public final class SessionLogWriter {
                         Thread.sleep(10);
                     } catch (InterruptedException ignored) {
                         // ignore
+                        // 忽略中断
                     }
                 }
             }
         } catch (Throwable ignored) {
             // ignore
+            // 忽略异常
         } finally {
             try {
                 writer.flush();

@@ -222,6 +222,7 @@ public final class ZaFridaProjectManager {
             storage.saveWorkspaceNoWriteAction(base, workspace);
 
             // refresh vfs
+            // 刷新虚拟文件系统
             projectDir.refresh(false, true);
             base.refresh(false, true);
         });
@@ -342,6 +343,7 @@ public final class ZaFridaProjectManager {
         if (vf != null) return vf;
 
         // fallback
+        // 回退处理
         ensureFile(dir, defaultMain, defaultAgentSkeleton());
         VirtualFile fallback = dir.findChild(defaultMain);
         if (fallback != null) return fallback;

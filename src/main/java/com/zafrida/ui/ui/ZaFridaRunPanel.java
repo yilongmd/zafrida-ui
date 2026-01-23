@@ -63,55 +63,97 @@ import com.intellij.openapi.util.text.StringUtil;
  */
 public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
+    /** IDE 项目实例 */
     private final @NotNull Project project;
+    /** 控制台选项卡面板 */
     private final @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel;
+    /** Run 控制台面板 */
     private final @NotNull ZaFridaConsolePanel runConsolePanel;
+    /** Attach 控制台面板 */
     private final @NotNull ZaFridaConsolePanel attachConsolePanel;
+    /** 模板面板 */
     private final @NotNull ZaFridaTemplatePanel templatePanel;
 
+    /** Frida CLI 服务 */
     private final @NotNull FridaCliService fridaCli;
+    /** 会话服务 */
     private final @NotNull ZaFridaSessionService sessionService;
 
+    /** 设备下拉框 */
     private final ComboBox<FridaDevice> deviceCombo = new ComboBox<>();
+    /** 刷新设备按钮 */
     private final JButton refreshDevicesBtn = new JButton("");
+    /** 添加远程设备按钮 */
     private final JButton addRemoteBtn = new JButton("Remote");
 
+    /** Run 脚本输入框 */
     private final JBTextField runScriptField = new JBTextField();
+    /** 定位 Run 脚本按钮 */
     private final JButton locateRunScriptBtn = new JButton("");
+    /** 选择 Run 脚本按钮 */
     private final JButton chooseRunScriptBtn = new JButton("Choose...");
+    /** Attach 脚本输入框 */
     private final JBTextField attachScriptField = new JBTextField();
+    /** 定位 Attach 脚本按钮 */
     private final JButton locateAttachScriptBtn = new JButton("");
+    /** 选择 Attach 脚本按钮 */
     private final JButton chooseAttachScriptBtn = new JButton("Choose...");
 
+    /** 目标包名/进程输入框 */
     private final JBTextField targetField = new JBTextField();
 
+    /** 额外参数输入框 */
     private final JBTextField extraArgsField = new JBTextField();
 
+    /** Run 按钮 */
     private final JButton runBtn = new JButton("Run");
+    /** Attach 按钮 */
     private final JButton attachBtn = new JButton("Attach");
+    /** Stop 按钮 */
     private final JButton stopBtn = new JButton("Stop");
+    /** 强制停止按钮 */
     private final JButton forceStopBtn = new JButton("S App");
+    /** 打开 App 按钮 */
     private final JButton openAppBtn = new JButton("O App");
+    /** 清空控制台按钮 */
     private final JButton clearConsoleBtn = new JButton("Clear Console");
 
+    /** 日志文件路径提示标签 */
     private final JLabel logFileLabel = new JLabel("Log: (not started)");
 
+    /** Run 脚本文件 */
     private @Nullable VirtualFile runScriptFile;
+    /** Attach 脚本文件 */
     private @Nullable VirtualFile attachScriptFile;
 
+    /** 是否已输出工具链信息 */
     private boolean printedToolchainInfo = false;
 
+    /** ZAFrida 项目管理器 */
     private final ZaFridaProjectManager fridaProjectManager;
+    /** ZAFrida 项目选择器 */
     private final SearchableComboBoxPanel<ZaFridaFridaProject> fridaProjectSelector =
             new SearchableComboBoxPanel<>(p -> p == null ? "" : p.getName());
+    /** 项目平台图标 */
     private final JLabel projectTypeIcon = new JLabel();
+    /** 项目选择器是否在更新中 */
     private boolean updatingFridaProjectSelector = false;
+    /** 设备列表是否在更新中 */
     private boolean updatingDeviceCombo = false;
+    /** 运行字段是否在更新中 */
     private boolean updatingRunFields = false;
+    /** 外部 Run 按钮（Header 中） */
     private @Nullable JButton externalRunBtn;
+    /** 外部 Stop 按钮（Header 中） */
     private @Nullable JButton externalStopBtn;
 
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     * @param consoleTabsPanel 控制台选项卡面板
+     * @param templatePanel 模板面板
+     */
     public ZaFridaRunPanel(@NotNull Project project,
                            @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel,
                            @NotNull ZaFridaTemplatePanel templatePanel) {
@@ -152,6 +194,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         applyActiveFridaProjectToUi(fridaProjectManager.getActiveProject());
     }
 
+    /**
+     * 初始化 UI 状态与默认属性。
+     */
     private void initUiState() {
         deviceCombo.setRenderer(new DeviceCellRenderer());
         runScriptField.setEditable(false);
@@ -183,6 +228,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         updateRunningState();
     }
 
+    /**
+     * 构建项目选择行。
+     * @return 行面板
+     */
     private JPanel buildFridaProjectRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         row.add(fridaProjectSelector);
@@ -190,6 +239,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return row;
     }
 
+    /**
+     * 绑定 UI 交互事件。
+     */
     private void bindActions() {
         refreshDevicesBtn.addActionListener(e -> reloadDevicesAsync());
 
@@ -276,6 +328,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     }
 
+    /**
+     * 订阅 Frida 项目切换事件。
+     */
     private void subscribeToFridaProjectChanges() {
         // 用面板本身作为 Disposable，IDE 关闭 ToolWindow 时会自动断开订阅
         project.getMessageBus().connect(this).subscribe(ZaFridaProjectManager.TOPIC, new ZaFridaProjectListener() {
@@ -289,6 +344,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             }
         });
     }
+
+    /**
+     * 刷新项目列表到 UI。
+     */
     private void reloadFridaProjectsIntoUi() {
         updatingFridaProjectSelector = true;
         try {
@@ -307,6 +366,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             updatingFridaProjectSelector = false;
         }
     }
+
+    /**
+     * 将激活项目配置应用到 UI。
+     * @param active 当前激活项目
+     */
     private void applyActiveFridaProjectToUi(@Nullable ZaFridaFridaProject active) {
         updatingFridaProjectSelector = true;
         try {
@@ -376,6 +440,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         reloadDevicesAsync();
     }
 
+    /**
+     * 更新项目平台图标。
+     * @param active 当前激活项目
+     */
     private void updateProjectTypeIcon(@Nullable ZaFridaFridaProject active) {
         if (active == null) {
             projectTypeIcon.setIcon(null);
@@ -386,6 +454,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         projectTypeIcon.setToolTipText("Platform: " + active.getPlatform().name());
     }
 
+    /**
+     * 持久化额外参数到项目配置。
+     */
     private void persistExtraArgs() {
         if (updatingRunFields) return;
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
@@ -394,6 +465,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         fridaProjectManager.updateProjectConfig(active, c -> c.extraArgs = args == null ? "" : args);
     }
 
+    /**
+     * 选择 Run 脚本文件。
+     * @param initialDir 初始目录
+     * @return 脚本文件或 null
+     */
     private @Nullable VirtualFile chooseRunScriptFile(@Nullable VirtualFile initialDir) {
         ZaFridaSettingsState st = ApplicationManager.getApplication()
                 .getService(ZaFridaSettingsService.class)
@@ -411,9 +487,18 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return ProjectFileUtil.chooseJavaScriptFile(project);
     }
 
+    /**
+     * 选择 Attach 脚本文件。
+     * @param initialDir 初始目录
+     * @return 脚本文件或 null
+     */
     private @Nullable VirtualFile chooseAttachScriptFile(@Nullable VirtualFile initialDir) {
         return chooseRunScriptFile(initialDir);
     }
+
+    /**
+     * 创建新的 Frida 项目。
+     */
     private void createNewFridaProject() {
         CreateZaFridaProjectDialog dialog = new CreateZaFridaProjectDialog(project);
         if (!dialog.showAndGet()) return;
@@ -439,6 +524,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 打开项目设置对话框。
+     */
     private void openProjectSettings() {
         ZaFridaProjectSettingsDialog dialog = new ZaFridaProjectSettingsDialog(
                 project,
@@ -452,24 +540,39 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 打开全局设置对话框。
+     */
     private void openGlobalSettings() {
         SlowOperations.allowSlowOperations(() ->
                 ShowSettingsUtil.getInstance().showSettingsDialog(project, "ZAFrida")
         );
     }
 
+    /**
+     * 打开新建项目对话框。
+     */
     public void openNewProjectDialog() {
         createNewFridaProject();
     }
 
+    /**
+     * 打开项目设置对话框（UI 入口）。
+     */
     public void openProjectSettingsDialog() {
         openProjectSettings();
     }
 
+    /**
+     * 打开全局设置对话框（UI 入口）。
+     */
     public void openGlobalSettingsDialog() {
         openGlobalSettings();
     }
 
+    /**
+     * 显示语言切换提示。
+     */
     public void showLanguageToggleMessage() {
         Messages.showInfoMessage(
                 project,
@@ -478,11 +581,18 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         );
     }
 
+    /**
+     * 触发 Run 行为。
+     */
     public void triggerRun() {
         if (!runBtn.isEnabled()) return;
         runFrida();
     }
 
+    /**
+     * 设置并运行指定 Run 脚本。
+     * @param file 脚本文件
+     */
     public void runWithRunScript(@NotNull VirtualFile file) {
         if (!file.isValid() || file.isDirectory()) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Invalid script file");
@@ -492,11 +602,18 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         triggerRun();
     }
 
+    /**
+     * 触发 Attach 行为。
+     */
     public void triggerAttach() {
         if (!attachBtn.isEnabled()) return;
         attachFrida();
     }
 
+    /**
+     * 设置并执行 Attach 脚本。
+     * @param file 脚本文件
+     */
     public void attachWithScript(@NotNull VirtualFile file) {
         if (!file.isValid() || file.isDirectory()) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Invalid attach script file");
@@ -506,23 +623,40 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         triggerAttach();
     }
 
+    /**
+     * 触发停止。
+     */
     public void triggerStop() {
         if (!stopBtn.isEnabled()) return;
         stopFrida();
     }
 
+    /**
+     * 触发强制停止目标应用。
+     */
     public void triggerForceStop() {
         forceStopApp();
     }
 
+    /**
+     * 触发打开目标应用。
+     */
     public void triggerOpenApp() {
         openApp();
     }
 
+    /**
+     * 清空当前控制台。
+     */
     public void triggerClearConsole() {
         consoleTabsPanel.clearActiveConsole();
     }
 
+    /**
+     * 绑定外部 Run/Stop 按钮状态。
+     * @param runButton 外部 Run 按钮
+     * @param stopButton 外部 Stop 按钮
+     */
     public void bindExternalRunStopButtons(@NotNull JButton runButton, @NotNull JButton stopButton) {
         this.externalRunBtn = runButton;
         this.externalStopBtn = stopButton;
@@ -534,6 +668,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
 
 
+    /**
+     * 构建设备选择行。
+     * @return 行面板
+     */
     private JPanel buildDeviceRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         deviceCombo.setPrototypeDisplayValue(new FridaDevice("usb", "usb", "Android"));
@@ -544,7 +682,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return p;
     }
 
-
+    /**
+     * 构建 Run 脚本选择行。
+     * @return 行面板
+     */
     private JPanel buildRunScriptRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         runScriptField.setColumns(22);
@@ -554,6 +695,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return p;
     }
 
+    /**
+     * 构建 Attach 脚本选择行。
+     * @return 行面板
+     */
     private JPanel buildAttachScriptRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         attachScriptField.setColumns(22);
@@ -563,12 +708,20 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return p;
     }
 
+    /**
+     * 构建目标输入行。
+     * @return 行面板
+     */
     private JPanel buildTargetRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         p.add(targetField);
         return p;
     }
 
+    /**
+     * 构建额外参数行。
+     * @return 行面板
+     */
     private JPanel buildExtraRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         p.add(extraArgsField);
@@ -576,6 +729,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return p;
     }
 
+    /**
+     * 构建运行控制按钮行。
+     * @return 行面板
+     */
     private JPanel buildButtonsRow() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         p.add(runBtn);
@@ -587,6 +744,14 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return p;
     }
 
+    /**
+     * 向表单追加一行布局。
+     * @param form 表单面板
+     * @param row 当前行索引
+     * @param label 左侧标签
+     * @param right 右侧组件
+     * @return 下一行索引
+     */
     private int addRow(JPanel form, int row, JLabel label, JPanel right) {
         GridBagConstraints c1 = new GridBagConstraints();
         c1.gridx = 0;
@@ -605,17 +770,28 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return row + 1;
     }
 
+    /**
+     * 设置 Run 脚本文件并更新 UI。
+     * @param file 脚本文件
+     */
     private void setRunScriptFile(@NotNull VirtualFile file) {
         this.runScriptFile = file;
         this.runScriptField.setText(file.getPath());
         this.templatePanel.setCurrentScriptFile(file);
     }
 
+    /**
+     * 设置 Attach 脚本文件并更新 UI。
+     * @param file 脚本文件
+     */
     private void setAttachScriptFile(@NotNull VirtualFile file) {
         this.attachScriptFile = file;
         this.attachScriptField.setText(file.getPath());
     }
 
+    /**
+     * 在 Project 视图中定位 Run 脚本。
+     */
     private void locateRunScriptInProjectView() {
         String path = runScriptField.getText();
         VirtualFile file = resolveRunScriptFileForLocate();
@@ -630,6 +806,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         ProjectFileUtil.openAndSelectInProject(project, file);
     }
 
+    /**
+     * 在 Project 视图中定位 Attach 脚本。
+     */
     private void locateAttachScriptInProjectView() {
         String path = attachScriptField.getText();
         VirtualFile file = resolveAttachScriptFileForLocate();
@@ -644,6 +823,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         ProjectFileUtil.openAndSelectInProject(project, file);
     }
 
+    /**
+     * 解析可定位的 Run 脚本文件。
+     * @return 脚本文件或 null
+     */
     private @Nullable VirtualFile resolveRunScriptFileForLocate() {
         if (runScriptFile != null && runScriptFile.isValid()) {
             return runScriptFile;
@@ -657,6 +840,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return LocalFileSystem.getInstance().findFileByPath(path.trim());
     }
 
+    /**
+     * 解析可定位的 Attach 脚本文件。
+     * @return 脚本文件或 null
+     */
     private @Nullable VirtualFile resolveAttachScriptFileForLocate() {
         if (attachScriptFile != null && attachScriptFile.isValid()) {
             return attachScriptFile;
@@ -667,6 +854,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
 
+    /**
+     * 输出工具链信息（仅一次）。
+     */
     private void printToolchainInfoOnce() {
         if (printedToolchainInfo) return;
         printedToolchainInfo = true;
@@ -700,6 +890,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 异步刷新设备列表。
+     */
     private void reloadDevicesAsync() {
         disableControls(true);
         printToolchainInfoOnce();
@@ -714,6 +907,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             try {
                 List<FridaDevice> devices = new ArrayList<>(fridaCli.listDevices(project));
                 // add remotes from settings
+                // 从设置中追加远程设备
                 var settingsService = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
                 var remotes = settingsService.getRemoteHosts();
                 for (String host : remotes) {
@@ -752,6 +946,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 根据连接模式调整 UI 状态。
+     * @param cfg 项目配置
+     */
     private void applyConnectionUi(@NotNull ZaFridaProjectConfig cfg) {
         FridaConnectionMode mode = cfg.connectionMode != null ? cfg.connectionMode : FridaConnectionMode.USB;
         boolean gadgetMode = mode == FridaConnectionMode.GADGET;
@@ -763,6 +961,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 从设备列表中选中上次保存的设备。
+     * @param devices 设备列表
+     * @param cfg 项目配置
+     */
     private void selectSavedDevice(@NotNull List<FridaDevice> devices, @Nullable ZaFridaProjectConfig cfg) {
         FridaDevice match = null;
         if (cfg != null) {
@@ -787,6 +990,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 通过 host 查找设备。
+     * @param devices 设备列表
+     * @param host 主机地址
+     * @return 设备或 null
+     */
     private static @Nullable FridaDevice findDeviceByHost(@NotNull List<FridaDevice> devices, @NotNull String host) {
         for (FridaDevice d : devices) {
             if (host.equals(d.getHost())) {
@@ -796,6 +1005,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return null;
     }
 
+    /**
+     * 通过 ID 查找设备。
+     * @param devices 设备列表
+     * @param id 设备 ID
+     * @return 设备或 null
+     */
     private static @Nullable FridaDevice findDeviceById(@NotNull List<FridaDevice> devices, @NotNull String id) {
         for (FridaDevice d : devices) {
             if (id.equals(d.getId())) {
@@ -805,14 +1020,30 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return null;
     }
 
+    /**
+     * 判断设备列表是否包含指定 host。
+     * @param devices 设备列表
+     * @param host 主机地址
+     * @return true 表示包含
+     */
     private static boolean containsHost(@NotNull List<FridaDevice> devices, @NotNull String host) {
         return findDeviceByHost(devices, host) != null;
     }
 
+    /**
+     * 解析 host:port 字符串。
+     * @param cfg 项目配置
+     * @return host:port
+     */
     private @NotNull String resolveHostPort(@Nullable ZaFridaProjectConfig cfg) {
         return resolveRemoteHost(cfg) + ":" + resolveRemotePort(cfg);
     }
 
+    /**
+     * 解析远程主机地址。
+     * @param cfg 项目配置
+     * @return 主机地址
+     */
     private @NotNull String resolveRemoteHost(@Nullable ZaFridaProjectConfig cfg) {
         if (cfg != null && !StringUtil.isEmptyOrSpaces(cfg.remoteHost)) {
             return cfg.remoteHost.trim();
@@ -823,6 +1054,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return safeHost(st.defaultRemoteHost);
     }
 
+    /**
+     * 解析远程端口。
+     * @param cfg 项目配置
+     * @return 端口号
+     */
     private int resolveRemotePort(@Nullable ZaFridaProjectConfig cfg) {
         if (cfg != null && cfg.remotePort > 0) {
             return cfg.remotePort;
@@ -833,22 +1069,40 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return safePort(st.defaultRemotePort);
     }
 
+    /**
+     * 规范化主机地址。
+     * @param host 主机地址
+     * @return 规范化后的主机地址
+     */
     private static @NotNull String safeHost(@Nullable String host) {
         if (host == null || host.isBlank()) return "127.0.0.1";
         return host.trim();
     }
 
+    /**
+     * 判断是否为回环地址。
+     * @param host 主机地址
+     * @return true 表示回环
+     */
     private static boolean isLoopbackHost(@Nullable String host) {
         if (host == null) return false;
         String trimmed = host.trim();
         return "127.0.0.1".equals(trimmed) || "localhost".equalsIgnoreCase(trimmed);
     }
 
+    /**
+     * 规范化端口值。
+     * @param port 端口值
+     * @return 合法端口
+     */
     private static int safePort(int port) {
         return port > 0 ? port : 14725;
     }
 
 
+    /**
+     * 执行 Run 流程。
+     */
     private void runFrida() {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         ZaFridaProjectConfig projectConfig = active != null ? fridaProjectManager.loadProjectConfig(active) : null;
@@ -921,6 +1175,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         startSession.run();
     }
 
+    /**
+     * 执行 Attach 流程。
+     */
     private void attachFrida() {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         ZaFridaProjectConfig projectConfig = active != null ? fridaProjectManager.loadProjectConfig(active) : null;
@@ -987,6 +1244,13 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         startSession.run();
     }
 
+    /**
+     * 根据连接模式解析设备。
+     * @param projectConfig 项目配置
+     * @param connectionMode 连接模式
+     * @param gadgetMode 是否为 Gadget 模式
+     * @return 设备或 null
+     */
     private @Nullable FridaDevice resolveDevice(@Nullable ZaFridaProjectConfig projectConfig,
                                                 @NotNull FridaConnectionMode connectionMode,
                                                 boolean gadgetMode) {
@@ -1006,6 +1270,13 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return dev;
     }
 
+    /**
+     * 解析 Run 脚本。
+     * @param active 当前项目
+     * @param target 目标包名
+     * @param gadgetMode 是否为 Gadget 模式
+     * @return 脚本文件或 null
+     */
     private @Nullable VirtualFile resolveRunScript(@Nullable ZaFridaFridaProject active,
                                                    @NotNull String target,
                                                    boolean gadgetMode) {
@@ -1032,6 +1303,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return script;
     }
 
+    /**
+     * 解析 Attach 脚本。
+     * @param active 当前项目
+     * @return 脚本文件或 null
+     */
     private @Nullable VirtualFile resolveAttachScript(@Nullable ZaFridaFridaProject active) {
         VirtualFile script = attachScriptFile;
 
@@ -1050,6 +1326,14 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return script;
     }
 
+    /**
+     * 启动 Frida 会话并绑定日志输出。
+     * @param type 会话类型
+     * @param cfg 运行配置
+     * @param console 控制台面板
+     * @param fridaProjectDir Frida 项目目录
+     * @param targetPackage 目标包名
+     */
     private void startFridaSession(@NotNull ZaFridaSessionType type,
                                    @NotNull FridaRunConfig cfg,
                                    @NotNull ZaFridaConsolePanel console,
@@ -1077,6 +1361,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 执行 ADB 端口转发并在完成后回调。
+     * @param port 端口号
+     * @param console 控制台面板
+     * @param onDone 完成回调
+     */
     private void runAdbForward(int port, @NotNull ZaFridaConsolePanel console, @NotNull Runnable onDone) {
         String tcp = "tcp:" + port;
         GeneralCommandLine cmd = new GeneralCommandLine("adb", "forward", tcp, tcp);
@@ -1113,6 +1403,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 停止当前会话。
+     */
     private void stopFrida() {
         ZaFridaSessionType type = resolveActiveSessionType();
         sessionService.stop(type);
@@ -1120,6 +1413,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         resolveConsoleForSessionType(type).info("[ZAFrida] Stopped");
     }
 
+    /**
+     * 强制停止目标应用（通过 adb）。
+     */
     private void forceStopApp() {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         ZaFridaProjectConfig projectConfig = active != null ? fridaProjectManager.loadProjectConfig(active) : null;
@@ -1180,6 +1476,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 启动目标应用（通过 adb）。
+     */
     private void openApp() {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         ZaFridaProjectConfig projectConfig = active != null ? fridaProjectManager.loadProjectConfig(active) : null;
@@ -1243,6 +1542,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 解析用于强制停止/打开应用的包名。
+     * @param cfg 项目配置
+     * @return 包名或 null
+     */
     private @Nullable String resolveForceStopPackage(@Nullable ZaFridaProjectConfig cfg) {
         boolean gadgetMode = cfg != null && cfg.connectionMode == FridaConnectionMode.GADGET;
         String target = gadgetMode ? "" : (targetField.getText() != null ? targetField.getText().trim() : "");
@@ -1255,6 +1559,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return null;
     }
 
+    /**
+     * 判断字符串是否为数字。
+     * @param value 字符串
+     * @return true 表示为数字
+     */
     private static boolean isNumeric(@NotNull String value) {
         for (int i = 0; i < value.length(); i++) {
             if (!Character.isDigit(value.charAt(i))) return false;
@@ -1262,6 +1571,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return !value.isEmpty();
     }
 
+    /**
+     * 更新运行按钮可用性。
+     */
     private void updateRunningState() {
         boolean runRunning = sessionService.isRunning(ZaFridaSessionType.RUN);
         boolean attachRunning = sessionService.isRunning(ZaFridaSessionType.ATTACH);
@@ -1271,16 +1583,28 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         syncExternalRunStopButtons();
     }
 
+    /**
+     * 根据当前控制台选中会话类型。
+     * @return 会话类型
+     */
     private @NotNull ZaFridaSessionType resolveActiveSessionType() {
         return consoleTabsPanel.getActiveConsolePanel() == attachConsolePanel
                 ? ZaFridaSessionType.ATTACH
                 : ZaFridaSessionType.RUN;
     }
 
+    /**
+     * 根据会话类型选择控制台。
+     * @param type 会话类型
+     * @return 控制台面板
+     */
     private @NotNull ZaFridaConsolePanel resolveConsoleForSessionType(@NotNull ZaFridaSessionType type) {
         return type == ZaFridaSessionType.ATTACH ? attachConsolePanel : runConsolePanel;
     }
 
+    /**
+     * 同步外部 Run/Stop 按钮状态。
+     */
     private void syncExternalRunStopButtons() {
         if (externalRunBtn != null) {
             externalRunBtn.setEnabled(runBtn.isEnabled());
@@ -1290,6 +1614,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 启用/禁用部分控件。
+     * @param disabled 是否禁用
+     */
     private void disableControls(boolean disabled) {
         deviceCombo.setEnabled(!disabled);
         refreshDevicesBtn.setEnabled(!disabled);
@@ -1297,8 +1625,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
 
+    /**
+     * 释放资源。
+     */
     @Override
     public void dispose() {
         // project service handles stop
+        // 项目服务负责停止会话
     }
 }

@@ -21,9 +21,16 @@ import java.nio.charset.StandardCharsets;
  */
 public final class TypingsInstaller {
 
+    /**
+     * 私有构造函数，禁止实例化。
+     */
     private TypingsInstaller() {
     }
 
+    /**
+     * 安装 Frida typings 到项目目录。
+     * @param project 当前 IDE 项目
+     */
     public static void install(@NotNull Project project) {
         String basePath = project.getBasePath();
         if (basePath == null) {
@@ -60,6 +67,8 @@ public final class TypingsInstaller {
     }
 
     // NOTE: This is intentionally a minimal subset.
+    // 注意：此处仅提供最小子集。
+    /** 内置的简化 typings 内容 */
     private static final String DTS = """
             // Minimal Frida Gum typings for code completion (ZAFrida)
             // You can replace this file with @types/frida-gum for full coverage.

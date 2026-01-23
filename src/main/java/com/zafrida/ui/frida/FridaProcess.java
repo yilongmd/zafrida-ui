@@ -16,24 +16,45 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class FridaProcess {
 
+    /** 进程 ID（未运行应用时可能为 null） */
     private final @Nullable Integer pid;
+    /** 进程显示名称 */
     private final @NotNull String name;
+    /** 包名或 Bundle ID */
     private final @Nullable String identifier;
 
+    /**
+     * 构造函数。
+     * @param pid 进程 ID（可为空）
+     * @param name 进程显示名称
+     * @param identifier 包名或 Bundle ID（可为空）
+     */
     public FridaProcess(@Nullable Integer pid, @NotNull String name, @Nullable String identifier) {
         this.pid = pid;
         this.name = name;
         this.identifier = identifier;
     }
 
+    /**
+     * 获取进程 ID。
+     * @return 进程 ID 或 null
+     */
     public @Nullable Integer getPid() {
         return pid;
     }
 
+    /**
+     * 获取进程名称。
+     * @return 进程名称
+     */
     public @NotNull String getName() {
         return name;
     }
 
+    /**
+     * 获取包名或 Bundle ID。
+     * @return 标识字符串或 null
+     */
     public @Nullable String getIdentifier() {
         return identifier;
     }

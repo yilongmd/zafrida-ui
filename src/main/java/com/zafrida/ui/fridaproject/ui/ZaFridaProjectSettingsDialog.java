@@ -49,30 +49,55 @@ import com.intellij.ui.components.JBTextField;
  */
 public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
 
+    /** IDE 项目实例 */
     private final Project project;
+    /** 项目管理器 */
     private final ZaFridaProjectManager projectManager;
+    /** Frida CLI 服务 */
     private final FridaCliService fridaCliService;
+    /** 设备提供器 */
     private final Supplier<FridaDevice> deviceSupplier;
+    /** 错误日志回调 */
     private final @Nullable Consumer<String> errorLogger;
 
+    /** 目标模式单选组 */
     private final ButtonGroup targetGroup = new ButtonGroup();
 
+    /** 连接模式下拉框 */
     private final ComboBox<FridaConnectionMode> connectionModeCombo = new ComboBox<>(FridaConnectionMode.values());
+    /** 远程主机输入框 */
     private final JBTextField remoteHostField = new JBTextField();
+    /** 远程端口输入框 */
     private final JBTextField remotePortField = new JBTextField();
 
+    /** 手动目标单选按钮 */
     private final JRadioButton manualTargetRadio = new JRadioButton("Manual");
+    /** 设备选择目标单选按钮 */
     private final JRadioButton selectTargetRadio = new JRadioButton("Select from device");
+    /** 手动目标输入框 */
     private final JBTextField manualTargetField = new JBTextField();
 
+    /** 进程范围下拉框 */
     private final ComboBox<FridaProcessScope> scopeCombo = new ComboBox<>(FridaProcessScope.values());
+    /** 目标选择下拉框 */
     private final ComboBox<String> targetCombo = new ComboBox<>();
+    /** 目标刷新按钮 */
     private final JButton refreshTargetsBtn = new JButton("Refresh");
 
+    /** 项目信息展示标签 */
     private final JLabel projectInfoLabel = new JLabel();
 
+    /** 当前激活项目 */
     private @Nullable ZaFridaFridaProject activeProject;
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     * @param projectManager 项目管理器
+     * @param fridaCliService Frida CLI 服务
+     * @param deviceSupplier 设备提供器
+     * @param errorLogger 错误日志回调（可为空）
+     */
     public ZaFridaProjectSettingsDialog(@NotNull Project project,
                                         @NotNull ZaFridaProjectManager projectManager,
                                         @NotNull FridaCliService fridaCliService,
@@ -96,6 +121,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         bindActions();
     }
 
+    /**
+     * 创建对话框中心面板。
+     * @return 中心面板组件
+     */
     @Override
     protected @Nullable JComponent createCenterPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
@@ -143,6 +172,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return panel;
     }
 
+    /**
+     * 构建目标选择区域面板。
+     * @return 面板
+     */
     private JPanel buildTargetPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints rc = new GridBagConstraints();
@@ -172,6 +205,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return panel;
     }
 
+    /**
+     * 构建设备目标选择行。
+     * @return 面板
+     */
     private JPanel buildTargetSelectRow() {
         JPanel row = new JPanel(new BorderLayout(8, 0));
         targetCombo.setEditable(false);
@@ -183,6 +220,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return row;
     }
 
+    /**
+     * 构建远程主机输入行。
+     * @return 面板
+     */
     private JPanel buildRemoteHostRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         remoteHostField.setColumns(16);
@@ -195,6 +236,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return row;
     }
 
+    /**
+     * 绑定 UI 事件。
+     */
     private void bindActions() {
         refreshTargetsBtn.addActionListener(e -> refreshTargets());
         scopeCombo.addActionListener(e -> {
@@ -210,6 +254,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         connectionModeCombo.addActionListener(e -> updateConnectionUi());
     }
 
+    /**
+     * 从当前激活项目加载配置。
+     */
     private void loadFromProject() {
         activeProject = projectManager.getActiveProject();
         updateProjectInfo();
@@ -253,6 +300,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         }
     }
 
+    /**
+     * 刷新项目信息展示。
+     */
     private void updateProjectInfo() {
         if (activeProject == null) {
             projectInfoLabel.setIcon(null);
@@ -265,6 +315,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         projectInfoLabel.setToolTipText("Platform: " + activeProject.getPlatform().name());
     }
 
+    /**
+     * 从设备刷新目标列表。
+     */
     private void refreshTargets() {
         if (!selectTargetRadio.isSelected()) return;
         FridaDevice device = resolveDeviceForTargets();
@@ -305,6 +358,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         });
     }
 
+    /**
+     * 保存配置并关闭对话框。
+     */
     @Override
     protected void doOKAction() {
         if (activeProject == null) {
@@ -327,6 +383,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         super.doOKAction();
     }
 
+    /**
+     * 获取当前目标文本。
+     * @return 目标文本
+     */
     private String getTargetText() {
         if (manualTargetRadio.isSelected()) {
             return manualTargetField.getText() != null ? manualTargetField.getText().trim() : "";
@@ -335,6 +395,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return selected != null ? selected.toString().trim() : "";
     }
 
+    /**
+     * 设置目标文本并同步到 UI。
+     * @param value 目标文本
+     */
     private void setTargetText(@Nullable String value) {
         manualTargetField.setText(value == null ? "" : value.trim());
         if (value == null || value.isBlank()) {
@@ -344,6 +408,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         targetCombo.setSelectedItem(value);
     }
 
+    /**
+     * 根据目标选择模式更新 UI。
+     */
     private void updateTargetModeUi() {
         boolean manual = !selectTargetRadio.isSelected();
         manualTargetField.setEnabled(manual);
@@ -352,6 +419,9 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         scopeCombo.setEnabled(!manual);
     }
 
+    /**
+     * 根据连接模式更新 UI。
+     */
     private void updateConnectionUi() {
         FridaConnectionMode mode = (FridaConnectionMode) connectionModeCombo.getSelectedItem();
         boolean remote = mode == FridaConnectionMode.REMOTE || mode == FridaConnectionMode.GADGET;
@@ -359,6 +429,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         remotePortField.setEnabled(remote);
     }
 
+    /**
+     * 解析用于刷新目标列表的设备信息。
+     * @return 设备或 null
+     */
     private @Nullable FridaDevice resolveDeviceForTargets() {
         FridaConnectionMode mode = (FridaConnectionMode) connectionModeCombo.getSelectedItem();
         if (mode == FridaConnectionMode.REMOTE || mode == FridaConnectionMode.GADGET) {
@@ -384,6 +458,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return null;
     }
 
+    /**
+     * 解析并标准化要保存的主机与端口。
+     * @return 主机端口对象
+     */
     private HostPort resolveHostPortForSave() {
         ZaFridaSettingsState st = ApplicationManager.getApplication()
                 .getService(ZaFridaSettingsService.class)
@@ -397,19 +475,39 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return new HostPort(host, port);
     }
 
+    /**
+     * 判断字符串是否为空或仅空白。
+     * @param value 输入字符串
+     * @return true 表示为空
+     */
     private static boolean isBlank(@Nullable String value) {
         return value == null || value.trim().isEmpty();
     }
 
+    /**
+     * 标准化主机地址字符串。
+     * @param host 输入主机
+     * @return 标准化结果
+     */
     private static String safeHost(@Nullable String host) {
         if (host == null) return "";
         return host.trim();
     }
 
+    /**
+     * 标准化端口值。
+     * @param port 输入端口
+     * @return 合法端口或默认值
+     */
     private static int safePort(int port) {
         return port > 0 ? port : 14725;
     }
 
+    /**
+     * 解析端口文本。
+     * @param portText 端口文本
+     * @return 端口值或 0
+     */
     private static int parsePort(@Nullable String portText) {
         if (portText == null || portText.trim().isEmpty()) return 0;
         try {
@@ -419,16 +517,31 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         }
     }
 
+    /**
+     * 简单的 Host:Port 结构体。
+     */
     private static final class HostPort {
+        /** 主机地址 */
         private final String host;
+        /** 端口号 */
         private final int port;
 
+        /**
+         * 构造函数。
+         * @param host 主机地址
+         * @param port 端口号
+         */
         private HostPort(String host, int port) {
             this.host = host;
             this.port = port;
         }
     }
 
+    /**
+     * 生成目标下拉框显示文本。
+     * @param p 进程信息
+     * @return 显示文本或 null
+     */
     private static @Nullable String targetLabel(@NotNull FridaProcess p) {
         if (p.getIdentifier() != null && !p.getIdentifier().isBlank()) {
             return p.getIdentifier();
@@ -439,6 +552,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         return null;
     }
 
+    /**
+     * 输出错误日志。
+     * @param message 日志内容
+     */
     private void logError(@NotNull String message) {
         if (errorLogger != null) {
             errorLogger.accept(message);

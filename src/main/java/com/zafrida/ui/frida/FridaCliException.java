@@ -14,11 +14,23 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class FridaCliException extends RuntimeException {
 
+    /** 命令行完整字符串 */
     private final @NotNull String commandLine;
+    /** 退出码 */
     private final int exitCode;
+    /** 标准输出 */
     private final @NotNull String stdout;
+    /** 标准错误 */
     private final @NotNull String stderr;
 
+    /**
+     * 构造函数。
+     * @param message 异常描述
+     * @param commandLine 命令行字符串
+     * @param exitCode 退出码
+     * @param stdout 标准输出
+     * @param stderr 标准错误
+     */
     public FridaCliException(@NotNull String message,
                             @NotNull String commandLine,
                             int exitCode,
@@ -31,18 +43,34 @@ public final class FridaCliException extends RuntimeException {
         this.stderr = stderr;
     }
 
+    /**
+     * 获取命令行字符串。
+     * @return 命令行字符串
+     */
     public @NotNull String getCommandLine() {
         return commandLine;
     }
 
+    /**
+     * 获取退出码。
+     * @return 退出码
+     */
     public int getExitCode() {
         return exitCode;
     }
 
+    /**
+     * 获取标准输出。
+     * @return 标准输出
+     */
     public @NotNull String getStdout() {
         return stdout;
     }
 
+    /**
+     * 获取标准错误。
+     * @return 标准错误
+     */
     public @NotNull String getStderr() {
         return stderr;
     }

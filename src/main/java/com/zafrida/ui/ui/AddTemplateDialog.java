@@ -22,9 +22,15 @@ import java.awt.*;
  */
 public class AddTemplateDialog extends DialogWrapper {
 
+    /** 模板名称输入框 */
     private final JBTextField nameField;
+    /** 模板内容输入区 */
     private final JBTextArea contentArea;
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     */
     public AddTemplateDialog(@NotNull Project project) {
         super(project, true);
         setTitle("Add Custom Template");
@@ -40,6 +46,10 @@ public class AddTemplateDialog extends DialogWrapper {
         init();
     }
 
+    /**
+     * 创建对话框中心面板。
+     * @return 面板组件
+     */
     @Override
     protected @Nullable JComponent createCenterPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, JBUI.scale(10)));
@@ -70,6 +80,10 @@ public class AddTemplateDialog extends DialogWrapper {
         return panel;
     }
 
+    /**
+     * 校验输入内容。
+     * @return 校验结果或 null
+     */
     @Override
     protected @Nullable ValidationInfo doValidate() {
         String name = nameField.getText().trim();
@@ -88,10 +102,18 @@ public class AddTemplateDialog extends DialogWrapper {
         return null;
     }
 
+    /**
+     * 获取模板名称。
+     * @return 模板名称
+     */
     public @NotNull String getTemplateName() {
         return nameField.getText().trim();
     }
 
+    /**
+     * 获取模板内容（必要时补齐标题注释）。
+     * @return 模板内容
+     */
     public @NotNull String getTemplateContent() {
         String content = contentArea.getText();
         String name = getTemplateName();
@@ -103,6 +125,10 @@ public class AddTemplateDialog extends DialogWrapper {
         return content;
     }
 
+    /**
+     * 默认模板内容。
+     * @return 默认内容
+     */
     private String getDefaultContent() {
         return """
 // Template Title

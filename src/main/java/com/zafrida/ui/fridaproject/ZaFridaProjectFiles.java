@@ -12,15 +12,27 @@ import org.jetbrains.annotations.NotNull;
  * </ul>
  */
 public final class ZaFridaProjectFiles {
-    private ZaFridaProjectFiles() {}
-    // IDE 项目根目录：记录有哪些 ZAFrida 项目 + 上次选中
+    /**
+     * 私有构造函数，禁止实例化。
+     */
+    private ZaFridaProjectFiles() {
+    }
+
+    /** IDE 项目根目录：记录有哪些 ZAFrida 项目 + 上次选中 */
     public static final String WORKSPACE_FILE = "zafrida-workspace.xml";
-    // 每个 Frida 项目文件夹内：记录该项目配置/状态
+    /** 每个 Frida 项目文件夹内：记录该项目配置/状态 */
     public static final String PROJECT_FILE = "zafrida-project.xml";
 
     // Legacy fallback when project-specific default is unavailable.
+    // 当项目缺省入口脚本不可用时的兼容回退名称。
+    /** 旧版本默认入口脚本名称 */
     public static final String DEFAULT_MAIN_SCRIPT = "agent.js";
 
+    /**
+     * 生成默认主脚本文件名。
+     * @param projectName 项目名称
+     * @return 脚本文件名
+     */
     public static @NotNull String defaultMainScriptName(@NotNull String projectName) {
         String trimmed = projectName.trim();
         if (trimmed.isEmpty()) return DEFAULT_MAIN_SCRIPT;

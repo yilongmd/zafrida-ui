@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
  * <strong>用途：</strong> 快速生成针对特定 Java 方法的 Hook 代码，包含参数打印和原始方法调用 ({@code this.method(arg)})。
  */
 public class InsertJavaHookMethodAction extends InsertFridaSnippetAction {
+    /** 内置代码片段 */
     private static final @NotNull String SNIPPET = String.join("\n",
             """
                     Java.perform(function () {
@@ -26,6 +27,9 @@ public class InsertJavaHookMethodAction extends InsertFridaSnippetAction {
                     """
     );
 
+    /**
+     * 构造函数。
+     */
     public InsertJavaHookMethodAction() {
         super("Frida: hook Java method", SNIPPET);
     }

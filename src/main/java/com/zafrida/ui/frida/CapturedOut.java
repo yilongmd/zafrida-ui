@@ -13,10 +13,19 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class CapturedOut {
 
+    /** 标准输出内容 */
     public final @NotNull String stdout;
+    /** 标准错误内容 */
     public final @NotNull String stderr;
+    /** 进程退出码 */
     public final int exitCode;
 
+    /**
+     * 构造函数。
+     * @param stdout 标准输出内容
+     * @param stderr 标准错误内容
+     * @param exitCode 进程退出码
+     */
     public CapturedOut(@NotNull String stdout, @NotNull String stderr, int exitCode) {
         this.stdout = stdout;
         this.stderr = stderr;

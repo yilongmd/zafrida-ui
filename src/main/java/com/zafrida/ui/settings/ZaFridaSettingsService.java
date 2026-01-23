@@ -23,23 +23,40 @@ import java.util.List;
 )
 public final class ZaFridaSettingsService implements PersistentStateComponent<ZaFridaSettingsState> {
 
+    /** 持久化状态对象 */
     private final ZaFridaSettingsState state = new ZaFridaSettingsState();
 
+    /**
+     * 获取持久化状态。
+     * @return 配置状态
+     */
     @Override
     public @NotNull ZaFridaSettingsState getState() {
         return state;
     }
 
+    /**
+     * 加载持久化状态。
+     * @param loaded 已加载的状态
+     */
     @Override
     public void loadState(@NotNull ZaFridaSettingsState loaded) {
         XmlSerializerUtil.copyBean(loaded, state);
     }
 
+    /**
+     * 获取远程主机列表副本。
+     * @return 远程主机列表
+     */
     public @NotNull List<String> getRemoteHosts() {
         if (state.remoteHosts == null) return List.of();
         return new ArrayList<>(state.remoteHosts);
     }
 
+    /**
+     * 添加远程主机地址。
+     * @param host 主机地址
+     */
     public void addRemoteHost(@NotNull String host) {
         String h = host.trim();
         if (h.isEmpty()) return;
@@ -49,11 +66,19 @@ public final class ZaFridaSettingsService implements PersistentStateComponent<Za
         }
     }
 
+    /**
+     * 移除远程主机地址。
+     * @param host 主机地址
+     */
     public void removeRemoteHost(@NotNull String host) {
         if (state.remoteHosts == null) return;
         state.remoteHosts.remove(host.trim());
     }
 
+    /**
+     * 获取 frida 可执行文件路径。
+     * @return 路径或 null
+     */
     public @Nullable String getFridaExecutable() {
         return state.fridaExecutable;
     }

@@ -7,6 +7,8 @@ package com.zafrida.ui.frida;
  * 还是通过 TCP/IP 网络地址寻址。
  */
 public enum FridaDeviceMode {
+    /** 通过设备 ID/序列号寻址 */
     DEVICE_ID,
+    /** 通过主机地址寻址 */
     HOST
 }

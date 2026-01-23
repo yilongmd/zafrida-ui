@@ -14,11 +14,21 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class ZaFridaNotifier {
 
+    /** 通知组 ID */
     private static final String GROUP_ID = "ZAFrida";
 
+    /**
+     * 私有构造函数，禁止实例化。
+     */
     private ZaFridaNotifier() {
     }
 
+    /**
+     * 发送信息级通知。
+     * @param project 当前 IDE 项目
+     * @param title 标题
+     * @param content 内容
+     */
     public static void info(@NotNull Project project, @NotNull String title, @NotNull String content) {
         NotificationGroupManager.getInstance()
                 .getNotificationGroup(GROUP_ID)
@@ -26,6 +36,12 @@ public final class ZaFridaNotifier {
                 .notify(project);
     }
 
+    /**
+     * 发送警告级通知。
+     * @param project 当前 IDE 项目
+     * @param title 标题
+     * @param content 内容
+     */
     public static void warn(@NotNull Project project, @NotNull String title, @NotNull String content) {
         NotificationGroupManager.getInstance()
                 .getNotificationGroup(GROUP_ID)
@@ -33,6 +49,12 @@ public final class ZaFridaNotifier {
                 .notify(project);
     }
 
+    /**
+     * 发送错误级通知。
+     * @param project 当前 IDE 项目
+     * @param title 标题
+     * @param content 内容
+     */
     public static void error(@NotNull Project project, @NotNull String title, @NotNull String content) {
         NotificationGroupManager.getInstance()
                 .getNotificationGroup(GROUP_ID)

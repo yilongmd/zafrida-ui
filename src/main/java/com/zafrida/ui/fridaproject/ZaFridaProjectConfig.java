@@ -18,9 +18,12 @@ import org.jetbrains.annotations.Nullable;
  * </ul>
  */
 public final class ZaFridaProjectConfig {
+    /** 配置版本号 */
     public static final int VERSION = 1;
 
+    /** 项目名称 */
     public @NotNull String name = "";
+    /** 目标平台 */
     public @NotNull ZaFridaPlatform platform = ZaFridaPlatform.ANDROID;
 
     // 主脚本（相对项目文件夹）
@@ -38,14 +41,21 @@ public final class ZaFridaProjectConfig {
     // 上次调试目标（Android package / iOS bundle）
     public @Nullable String lastTarget = null;
 
+    /** 连接模式 */
     public @NotNull FridaConnectionMode connectionMode = FridaConnectionMode.USB;
+    /** 远程主机地址 */
     public @NotNull String remoteHost = "127.0.0.1";
+    /** 远程端口 */
     public int remotePort = 14725;
 
+    /** 上次连接设备 ID */
     public @Nullable String lastDeviceId = null;
+    /** 上次连接设备 Host */
     public @Nullable String lastDeviceHost = null;
 
+    /** 是否手动指定目标 */
     public boolean targetManual = true;
 
+    /** 进程列表查询范围 */
     public @NotNull FridaProcessScope processScope = FridaProcessScope.RUNNING_APPS;
 }

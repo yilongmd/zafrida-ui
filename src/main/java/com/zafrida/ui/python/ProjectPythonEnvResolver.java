@@ -61,7 +61,9 @@ public final class ProjectPythonEnvResolver {
             if (homePath == null || homePath.trim().isEmpty()) return null;
 
             // Some remote SDKs provide non-local paths (ssh://, docker://, etc.).
+            // 某些远程 SDK 会返回非本地路径（如 ssh://、docker:// 等）。
             // We only support local filesystem paths here.
+            // 此处仅支持本地文件系统路径。
             if (homePath.contains("://")) {
                 LOG.info("Project python SDK looks remote, skip env patch: " + homePath);
                 return null;
@@ -80,9 +82,13 @@ public final class ProjectPythonEnvResolver {
 
     /**
      * In PyCharm, the Python interpreter is often stored as Module SDK rather than Project SDK.
+     * 在 PyCharm 中，Python 解释器经常挂载在 Module SDK 而非 Project SDK。
      * So we try:
+     * 因此按以下顺序尝试：
      * 1) Project SDK
+     * 1) Project SDK（项目级）
      * 2) Each Module SDK
+     * 2) 各 Module SDK
      */
     /**
      * 尝试在当前 Project 中查找关联的 Python SDK。
@@ -109,11 +115,13 @@ public final class ProjectPythonEnvResolver {
         }
 
         // fallback: if projectSdk exists but doesn't look like python (rare in PyCharm), still return it
+        // 回退：若 Project SDK 存在但不太像 Python（PyCharm 里很少见），仍返回它
         if (projectSdk != null && projectSdk.getHomePath() != null && !projectSdk.getHomePath().isBlank()) {
             return projectSdk;
         }
 
         // fallback: first non-null module sdk
+        // 回退：返回第一个非空的 Module SDK
         for (Module m : modules) {
             Sdk moduleSdk = ModuleRootManager.getInstance(m).getSdk();
             if (moduleSdk != null && moduleSdk.getHomePath() != null && !moduleSdk.getHomePath().isBlank()) {
@@ -137,6 +145,7 @@ public final class ProjectPythonEnvResolver {
         if (home == null || home.isBlank()) return false;
 
         // Prefer SDK type name when available
+        // 优先使用 SDK 类型名称进行判断
         try {
             String typeName = sdk.getSdkType().getName();
             if (typeName != null && typeName.toLowerCase(Locale.ROOT).contains("python")) {
@@ -146,6 +155,7 @@ public final class ProjectPythonEnvResolver {
         }
 
         // Fallback: check executable file name
+        // 回退：检查可执行文件名
         try {
             String fileName = Paths.get(home).getFileName().toString().toLowerCase(Locale.ROOT);
             return fileName.startsWith("python") || fileName.startsWith("pypy");
@@ -170,7 +180,9 @@ public final class ProjectPythonEnvResolver {
 
         if (windows) {
             // venv: <env>\Scripts\python.exe
+            // 示例：<env>\Scripts\python.exe
             // conda: <env>\python.exe (Scripts is sibling)
+            // conda: <env>\python.exe（Scripts 同级）
             if (pythonDir != null && "scripts".equalsIgnoreCase(pythonDir.getFileName().toString())) {
                 envRoot = pythonDir.getParent();
             } else {
@@ -190,15 +202,18 @@ public final class ProjectPythonEnvResolver {
                 addIfDir(pathEntries, libraryBin);
 
                 // Some conda setups also use <env>\bin
+                // 某些 conda 环境也会使用 <env>\bin
                 addIfDir(toolDirs, envRoot.resolve("bin"));
                 addIfDir(pathEntries, envRoot.resolve("bin"));
 
                 // Optional conda extra dirs (doesn't hurt if missing)
+                // 可选的 conda 额外目录（缺失也无影响）
                 addIfDir(pathEntries, envRoot.resolve("Library").resolve("usr").resolve("bin"));
                 addIfDir(pathEntries, envRoot.resolve("Library").resolve("mingw-w64").resolve("bin"));
             }
         } else {
             // unix/mac: <env>/bin/python
+            // 示例：<env>/bin/python
             if (pythonDir != null && "bin".equals(pythonDir.getFileName().toString())) {
                 envRoot = pythonDir.getParent();
             } else {
@@ -250,7 +265,9 @@ public final class ProjectPythonEnvResolver {
 
     /**
      * Try to locate a console script in the resolved python env.
+     * 尝试在解析出的 Python 环境中定位控制台脚本。
      * Returns absolute path if found; otherwise null.
+     * 如果找到则返回绝对路径，否则返回 null。
      */
     /**
      * 尝试在给定的 Python 环境中查找指定的工具脚本。
@@ -308,6 +325,7 @@ public final class ProjectPythonEnvResolver {
      */
     private static @NotNull String detectPathKey(@NotNull GeneralCommandLine cmd) {
         // On Windows, the env var is typically "Path".
+        // Windows 下 PATH 变量通常写作 "Path"。
         if (cmd.getEnvironment().containsKey("Path")) return "Path";
         if (cmd.getEnvironment().containsKey("PATH")) return "PATH";
         String sysPath = System.getenv("Path");
@@ -325,10 +343,12 @@ public final class ProjectPythonEnvResolver {
         String v = cmd.getEnvironment().get(key);
         if (v != null) return v;
         // fallback to system env
+        // 回退到系统环境变量
         String sys = System.getenv(key);
         if (sys != null) return sys;
         if (!"PATH".equals(key)) {
             // try alternative case
+            // 尝试不同大小写
             String alt = "PATH".equalsIgnoreCase(key) ? "PATH" : "Path";
             return System.getenv(alt);
         }

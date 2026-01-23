@@ -87,26 +87,47 @@ public final class ZaFridaProjectSettings implements PersistentStateComponent<Za
      * 设备连接模式枚举
      */
     public enum DeviceConnectionMode {
+        /** USB 连接模式 */
         USB("USB", "-U"),
+        /** 远程连接模式 */
         REMOTE("Remote", "-H"),
+        /** Gadget 连接模式 */
         GADGET("Gadget", "-H");
 
+        /** 显示名称 */
         private final String displayName;
+        /** 对应 frida 命令行参数 */
         private final String fridaFlag;
 
+        /**
+         * 构造函数。
+         * @param displayName 显示名称
+         * @param fridaFlag frida 命令行参数
+         */
         DeviceConnectionMode(String displayName, String fridaFlag) {
             this.displayName = displayName;
             this.fridaFlag = fridaFlag;
         }
 
+        /**
+         * 获取显示名称。
+         * @return 显示名称
+         */
         public String getDisplayName() {
             return displayName;
         }
 
+        /**
+         * 获取 frida 参数。
+         * @return frida 参数
+         */
         public String getFridaFlag() {
             return fridaFlag;
         }
 
+        /**
+         * 返回显示名称。
+         */
         @Override
         public String toString() {
             return displayName;

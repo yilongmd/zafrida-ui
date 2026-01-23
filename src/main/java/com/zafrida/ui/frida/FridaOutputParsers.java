@@ -14,12 +14,17 @@ import java.util.List;
  */
 public final class FridaOutputParsers {
 
+    /**
+     * 私有构造函数，禁止实例化。
+     */
     private FridaOutputParsers() {
     }
 
     /**
      * Parses output of `frida-ls-devices`.
      * Expected columns: Id  Type  Name
+     * 解析 `frida-ls-devices` 输出。
+     * 期望列：Id、Type、Name。
      */
     public static @NotNull List<FridaDevice> parseDevices(@NotNull String stdout) {
         String clean = stripAnsi(stdout).trim();
@@ -42,6 +47,7 @@ public final class FridaOutputParsers {
                 String name = parts[2].trim();
 
                 // skip header/separator junk
+                // 跳过表头/分隔行等无效内容
                 if (id.isEmpty() || type.isEmpty()) continue;
                 if (id.equalsIgnoreCase("Id") && type.equalsIgnoreCase("Type")) continue;
                 if (isDashOnlyToken(id) || isDashOnlyToken(type)) continue;
@@ -55,6 +61,8 @@ public final class FridaOutputParsers {
     /**
      * Parses output of `frida-ps`.
      * Expected columns: PID  Name  Identifier
+     * 解析 `frida-ps` 输出。
+     * 期望列：PID、Name、Identifier。
      */
     public static @NotNull List<FridaProcess> parseProcesses(@NotNull String stdout) {
         String clean = stripAnsi(stdout).trim();
@@ -88,6 +96,11 @@ public final class FridaOutputParsers {
         return out;
     }
 
+    /**
+     * 过滤并返回非空行列表。
+     * @param text 原始文本
+     * @return 非空行列表
+     */
     private static @NotNull List<String> nonEmptyLines(@NotNull String text) {
         String[] raw = text.split("\\R");
         List<String> lines = new ArrayList<>();
@@ -98,6 +111,12 @@ public final class FridaOutputParsers {
         return lines;
     }
 
+    /**
+     * 查找表头所在行的索引。
+     * @param lines 文本行列表
+     * @param headerStartsWith 表头起始关键字
+     * @return 表头索引，未找到返回 -1
+     */
     private static int indexOfHeader(@NotNull List<String> lines, @NotNull String headerStartsWith) {
         for (int i = 0; i < lines.size(); i++) {
             String t = lines.get(i).trim();
@@ -108,6 +127,11 @@ public final class FridaOutputParsers {
         return -1;
     }
 
+    /**
+     * 从列表前部移除空行/分隔线。
+     * @param lines 原始行列表
+     * @return 去掉分隔线后的子列表
+     */
     private static @NotNull List<String> dropSeparators(@NotNull List<String> lines) {
         int idx = 0;
         while (idx < lines.size()) {
@@ -125,32 +149,49 @@ public final class FridaOutputParsers {
         return lines.subList(idx, lines.size());
     }
 
+    /**
+     * 判断是否为分隔线行。
+     * @param t 待判断的行文本
+     * @return true 表示分隔线
+     */
     private static boolean isSeparatorLine(@NotNull String t) {
         // Accept things like:
+        // 接受如下分隔线形式：
         // "---- ---- ----"
+        // 例如："---- ---- ----"
         // "──────────────"
+        // 例如："──────────────"
         // "| ---- | ---- |"
+        // 例如："| ---- | ---- |"
         boolean hasDash = false;
         for (int i = 0; i < t.length(); i++) {
             char ch = t.charAt(i);
 
             // common dash-like chars
+            // 常见的“横线”字符
             if (ch == '-' || ch == '─' || ch == '━' || ch == '—') {
                 hasDash = true;
                 continue;
             }
 
             // allow whitespace and some table border chars
+            // 允许空白与表格边框字符
             if (Character.isWhitespace(ch) || ch == '|' || ch == '+' ) {
                 continue;
             }
 
             // any other char => not a separator line
+            // 其他字符出现则判定为非分隔线
             return false;
         }
         return hasDash;
     }
 
+    /**
+     * 判断 token 是否仅由“横线”组成。
+     * @param token 待判断文本
+     * @return true 表示仅包含横线
+     */
     private static boolean isDashOnlyToken(@NotNull String token) {
         String t = token.trim();
         if (t.isEmpty()) return true;
@@ -168,13 +209,25 @@ public final class FridaOutputParsers {
     }
 
 
+    /**
+     * 以 2 个及以上空格为分隔符拆分行文本。
+     * @param line 输入行
+     * @param limit 最大拆分数，<=0 表示不限制
+     * @return 拆分后的字段数组
+     */
     private static @NotNull String[] splitBy2PlusSpaces(@NotNull String line, int limit) {
         // Replace 2+ spaces with a single delimiter, then split.
+        // 将 2 个及以上空格替换为分隔符后再拆分。
         String normalized = line.trim().replaceAll(" {2,}", "\t");
         if (limit <= 0) return normalized.split("\t");
         return normalized.split("\t", limit);
     }
 
+    /**
+     * 尝试将字符串解析为整数。
+     * @param s 输入字符串
+     * @return 解析结果或 null
+     */
     private static Integer tryParseInt(String s) {
         try {
             return Integer.parseInt(s);
@@ -183,12 +236,18 @@ public final class FridaOutputParsers {
         }
     }
 
+    /**
+     * 空字符串转为 null。
+     * @param s 输入字符串
+     * @return 非空字符串或 null
+     */
     private static String emptyToNull(String s) {
         return s == null || s.isEmpty() ? null : s;
     }
 
     /**
      * Minimal ANSI escape removal (enough for most frida tools outputs).
+     * 最小化 ANSI 转义序列清理（适用于大多数 frida 工具输出）。
      */
     private static @NotNull String stripAnsi(@NotNull String text) {
         StringBuilder sb = new StringBuilder(text.length());
@@ -198,6 +257,7 @@ public final class FridaOutputParsers {
             char c = text.charAt(i);
             if (c == ESC) {
                 // Skip sequences like ESC [ ... m
+                // 跳过类似 ESC [ ... m 的转义序列
                 int j = i + 1;
                 if (j < text.length() && text.charAt(j) == '[') {
                     j++;
@@ -208,6 +268,7 @@ public final class FridaOutputParsers {
                             continue;
                         }
                         // Typically ends with 'm'
+                        // 通常以 'm' 结束
                         j++;
                         break;
                     }

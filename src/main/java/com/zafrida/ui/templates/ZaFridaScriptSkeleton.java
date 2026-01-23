@@ -9,9 +9,13 @@ package com.zafrida.ui.templates;
  */
 public final class ZaFridaScriptSkeleton {
 
+    /**
+     * 私有构造函数，禁止实例化。
+     */
     private ZaFridaScriptSkeleton() {
     }
 
+    /** 默认脚本骨架内容 */
     public static final String TEXT = """
             'use strict';
 

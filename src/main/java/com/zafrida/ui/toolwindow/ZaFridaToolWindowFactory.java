@@ -17,6 +17,11 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class ZaFridaToolWindowFactory implements ToolWindowFactory, DumbAware {
 
+    /**
+     * 创建并挂载 ToolWindow 内容。
+     * @param project 当前 IDE 项目
+     * @param toolWindow ToolWindow 实例
+     */
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         ZaFridaMainToolWindow mainPanel = new ZaFridaMainToolWindow(project);

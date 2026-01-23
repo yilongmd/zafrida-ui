@@ -18,6 +18,9 @@ import javax.swing.JList;
  */
 public final class DeviceCellRenderer extends ColoredListCellRenderer<FridaDevice> {
 
+    /**
+     * 渲染设备下拉项。
+     */
     @Override
     protected void customizeCellRenderer(@NotNull JList<? extends FridaDevice> list,
                                          @Nullable FridaDevice value,

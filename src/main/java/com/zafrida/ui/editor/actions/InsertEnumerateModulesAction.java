@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
  * 3. 对抗 ASLR (地址空间布局随机化)。
  */
 public class InsertEnumerateModulesAction extends InsertFridaSnippetAction {
+    /** 内置代码片段 */
     private static final @NotNull String SNIPPET = String.join("\n",
             """
                     Process.enumerateModules().forEach(function (m) {
@@ -21,6 +22,9 @@ public class InsertEnumerateModulesAction extends InsertFridaSnippetAction {
                     """
     );
 
+    /**
+     * 构造函数。
+     */
     public InsertEnumerateModulesAction() {
         super("Frida: enumerate modules", SNIPPET);
     }

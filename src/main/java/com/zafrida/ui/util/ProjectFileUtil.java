@@ -26,9 +26,17 @@ import java.nio.charset.StandardCharsets;
  */
 public final class ProjectFileUtil {
 
+    /**
+     * 私有构造函数，禁止实例化。
+     */
     private ProjectFileUtil() {
     }
 
+    /**
+     * 弹出文件选择器选择 JS 脚本。
+     * @param project 当前 IDE 项目
+     * @return 选择的文件或 null
+     */
     public static @Nullable VirtualFile chooseJavaScriptFile(@NotNull Project project) {
         FileChooserDescriptor descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor("js");
         descriptor.setTitle("Select Frida JS Script");
@@ -37,6 +45,12 @@ public final class ProjectFileUtil {
         return FileChooser.chooseFile(descriptor, project, null);
     }
 
+    /**
+     * 在项目内弹出文件选择器选择 JS 脚本。
+     * @param project 当前 IDE 项目
+     * @param initialDir 初始目录（可为空）
+     * @return 选择的文件或 null
+     */
     public static @Nullable VirtualFile chooseJavaScriptFileInProject(@NotNull Project project,
                                                                       @Nullable VirtualFile initialDir) {
         FileChooserDescriptor descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor("js");
@@ -53,6 +67,13 @@ public final class ProjectFileUtil {
         return FileChooser.chooseFile(descriptor, project, start);
     }
 
+    /**
+     * 在项目内创建脚本文件。
+     * @param project 当前 IDE 项目
+     * @param relativePath 相对路径
+     * @param content 文件内容
+     * @return 创建的文件或 null
+     */
     public static @Nullable VirtualFile createScript(@NotNull Project project,
                                                      @NotNull String relativePath,
                                                      @NotNull String content) {
@@ -99,6 +120,11 @@ public final class ProjectFileUtil {
         return out[0];
     }
 
+    /**
+     * 打开文件并在 Project 视图中选中。
+     * @param project 当前 IDE 项目
+     * @param file 目标文件
+     */
     public static void openAndSelectInProject(@NotNull Project project, @NotNull VirtualFile file) {
         FileEditorManager.getInstance(project).openFile(file, true);
         ProjectView view = ProjectView.getInstance(project);

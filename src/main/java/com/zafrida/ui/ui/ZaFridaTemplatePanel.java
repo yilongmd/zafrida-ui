@@ -57,38 +57,66 @@ import java.util.stream.Collectors;
  */
 public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
 
+    /** 收藏分类名称 */
     private static final String CATEGORY_FAVORITES = "Favorites";
+    /** Android 分类名称 */
     private static final String CATEGORY_ANDROID = "Android";
+    /** iOS 分类名称 */
     private static final String CATEGORY_IOS = "iOS";
+    /** 自定义分类名称 */
     private static final String CATEGORY_CUSTOM = "Custom";
 
     // 模板标记
+    /** 模板块开始标记前缀 */
     private static final String TEMPLATE_START_PREFIX = "// ===== [ZaFrida Template Start: ";
+    /** 模板块结束标记前缀 */
     private static final String TEMPLATE_END_PREFIX = "// ===== [ZaFrida Template End: ";
+    /** 模板块标记后缀 */
     private static final String TEMPLATE_MARKER_SUFFIX = "] =====";
 
+    /** IDE 项目实例 */
     private final @NotNull Project project;
+    /** 控制台面板 */
     private final @NotNull ZaFridaConsolePanel consolePanel;
+    /** 模板服务 */
     private final @NotNull ZaFridaTemplateService templateService;
 
+    /** 分类列表组件 */
     private final JBList<String> categoryList;
+    /** 分类列表模型 */
     private final DefaultListModel<String> categoryModel;
 
+    /** 模板复选列表 */
     private final CheckBoxList<ZaFridaTemplate> templateCheckBoxList;
+    /** 模板过滤输入框 */
     private final JBTextField templateFilterField = new JBTextField();
 
+    /** 预览面板 */
     private final JPanel previewPanel;
+    /** 模板标题标签 */
     private final JBLabel templateTitleLabel;
+    /** 模板描述标签 */
     private final JBLabel templateDescLabel;
+    /** 预览编辑器 */
     private @Nullable Editor previewEditor;
+    /** 预览文档 */
     private @Nullable Document previewDocument;
 
+    /** 当前平台 */
     private @Nullable ZaFridaPlatform currentPlatform;
+    /** 当前脚本文件 */
     private @Nullable VirtualFile currentScriptFile;
 
+    /** 收藏模板 ID 集合 */
     private final Set<String> favoriteTemplateIds = new HashSet<>();
+    /** 复选框更新保护开关 */
     private boolean isUpdatingCheckboxes = false;
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     * @param consolePanel 控制台面板
+     */
     public ZaFridaTemplatePanel(@NotNull Project project,
                                 @NotNull ZaFridaConsolePanel consolePanel) {
         super(new BorderLayout());
@@ -99,6 +127,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         setBorder(JBUI.Borders.empty());
 
         // Category list (left narrow column)
+        // 分类列表（左侧窄列）
         categoryModel = new DefaultListModel<>();
         categoryModel.addElement(CATEGORY_FAVORITES);
         categoryModel.addElement(CATEGORY_ANDROID);
@@ -113,6 +142,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         categoryScroll.setBorder(JBUI.Borders.customLine(JBColor.border(), 0, 0, 0, 1));
 
         // Template checkbox list (middle column)
+        // 模板复选列表（中间列）
         templateCheckBoxList = new CheckBoxList<>();
         templateCheckBoxList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
@@ -122,6 +152,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         templateListPanel.add(createSelectionActionPanel(), BorderLayout.SOUTH);
 
         // Preview panel (right column)
+        // 预览面板（右侧列）
         previewPanel = new JPanel(new BorderLayout());
         previewPanel.setBorder(JBUI.Borders.empty(4));
 
@@ -156,6 +187,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         previewPanel.add(createEditorPlaceholder(), BorderLayout.CENTER);
 
         // Layout with splitters
+        // 使用分隔条布局
         OnePixelSplitter leftSplitter = new OnePixelSplitter(false, 0.12f);
         leftSplitter.setFirstComponent(categoryScroll);
 
@@ -170,6 +202,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         add(leftSplitter, BorderLayout.CENTER);
 
         // Bind events
+        // 绑定事件
         categoryList.addListSelectionListener(this::onCategorySelected);
         templateCheckBoxList.addListSelectionListener(this::onTemplateSelected);
 
@@ -182,9 +215,13 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         });
 
         // Initial load
+        // 初始化加载
         refreshTemplateList();
     }
 
+    /**
+     * 打开模板目录。
+     */
     private void openTemplatesFolder() {
         try {
             java.awt.Desktop.getDesktop().open(templateService.getUserTemplatesRoot().toFile());
@@ -193,6 +230,11 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 处理模板勾选状态变化。
+     * @param template 模板对象
+     * @param selected 是否选中
+     */
     private void onTemplateCheckboxChanged(@NotNull ZaFridaTemplate template, boolean selected) {
         if (currentScriptFile == null) {
             consolePanel.warn("[Template] No script file selected. Please select a script file first.");
@@ -231,6 +273,11 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 回滚复选框状态（避免递归触发事件）。
+     * @param template 模板对象
+     * @param state 目标状态
+     */
     private void revertCheckboxState(@NotNull ZaFridaTemplate template, boolean state) {
         isUpdatingCheckboxes = true;
         try {
@@ -240,6 +287,13 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 插入模板内容到脚本尾部。
+     * @param document 文档对象
+     * @param template 模板对象
+     * @param startMarker 开始标记
+     * @param endMarker 结束标记
+     */
     private void insertTemplate(@NotNull Document document, @NotNull ZaFridaTemplate template,
                                 String startMarker, String endMarker) {
         WriteCommandAction.runWriteCommandAction(project, () -> {
@@ -261,6 +315,13 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 将模板块注释掉。
+     * @param document 文档对象
+     * @param templateId 模板 ID
+     * @param startMarker 开始标记
+     * @param endMarker 结束标记
+     */
     private void commentTemplate(@NotNull Document document, String templateId,
                                  String startMarker, String endMarker) {
         WriteCommandAction.runWriteCommandAction(project, () -> {
@@ -302,6 +363,13 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 取消模板块注释。
+     * @param document 文档对象
+     * @param templateId 模板 ID
+     * @param startMarker 开始标记
+     * @param endMarker 结束标记
+     */
     private void uncommentTemplate(@NotNull Document document, String templateId,
                                    String startMarker, String endMarker) {
         WriteCommandAction.runWriteCommandAction(project, () -> {
@@ -347,6 +415,9 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         });
     }
 
+    /**
+     * 同步复选框状态与脚本内容。
+     */
     public void syncCheckboxStatesWithScript() {
         if (currentScriptFile == null) return;
 
@@ -393,6 +464,10 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 创建模板工具栏。
+     * @return 工具栏组件
+     */
     private JComponent createTemplateToolbar() {
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(2), JBUI.scale(2)));
         toolbar.setBorder(JBUI.Borders.customLine(JBColor.border(), 0, 0, 1, 0));
@@ -435,6 +510,10 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         return toolbar;
     }
 
+    /**
+     * 创建选择操作面板。
+     * @return 面板
+     */
     private JPanel createSelectionActionPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(4)));
         panel.setBorder(JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0));
@@ -455,6 +534,12 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         return panel;
     }
 
+    /**
+     * 创建无边框图标按钮。
+     * @param icon 图标
+     * @param tooltip 提示文本
+     * @return 按钮
+     */
     private JButton createToolButton(Icon icon, String tooltip) {
         JButton btn = new JButton(icon);
         btn.setToolTipText(tooltip);
@@ -469,6 +554,10 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         return btn;
     }
 
+    /**
+     * 创建编辑器占位组件。
+     * @return 占位组件
+     */
     private JComponent createEditorPlaceholder() {
         JPanel placeholder = new JPanel(new BorderLayout());
         placeholder.setBackground(UIUtil.getPanelBackground());
@@ -478,12 +567,20 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         return placeholder;
     }
 
+    /**
+     * 分类选择事件处理。
+     * @param e 事件
+     */
     private void onCategorySelected(ListSelectionEvent e) {
         if (e.getValueIsAdjusting()) return;
         refreshTemplateList();
         syncCheckboxStatesWithScript();
     }
 
+    /**
+     * 模板选择事件处理。
+     * @param e 事件
+     */
     private void onTemplateSelected(ListSelectionEvent e) {
         if (e.getValueIsAdjusting()) return;
         int index = templateCheckBoxList.getSelectedIndex();
@@ -495,6 +592,9 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 刷新模板列表。
+     */
     private void refreshTemplateList() {
         isUpdatingCheckboxes = true;
         try {
@@ -540,6 +640,7 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
             }
 
             // Sort: favorites first, then alphabetically
+            // 排序：收藏优先，其次按名称排序
             filtered.sort((a, b) -> {
                 boolean aFav = favoriteTemplateIds.contains(a.getId());
                 boolean bFav = favoriteTemplateIds.contains(b.getId());
@@ -561,6 +662,12 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 判断模板是否匹配过滤条件。
+     * @param template 模板对象
+     * @param needle 过滤关键字
+     * @return true 表示匹配
+     */
     private boolean matchesFilter(@NotNull ZaFridaTemplate template, @NotNull String needle) {
         String title = template.getTitle();
         if (title != null && title.toLowerCase(Locale.ROOT).contains(needle)) {
@@ -570,6 +677,10 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         return desc != null && desc.toLowerCase(Locale.ROOT).contains(needle);
     }
 
+    /**
+     * 更新预览面板。
+     * @param template 目标模板
+     */
     private void updatePreview(@Nullable ZaFridaTemplate template) {
         // 清除旧的编辑器组件（保留header）
         Component[] components = previewPanel.getComponents();
@@ -628,6 +739,9 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         previewPanel.repaint();
     }
 
+    /**
+     * 复制当前选中模板内容。
+     */
     private void copySelectedTemplate() {
         int index = templateCheckBoxList.getSelectedIndex();
         if (index < 0) return;
@@ -637,6 +751,9 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         consolePanel.info("[Template] Copied: " + t.getTitle());
     }
 
+    /**
+     * 复制所有已选模板内容。
+     */
     private void copyAllSelected() {
         List<ZaFridaTemplate> selected = new ArrayList<>();
         for (int i = 0; i < templateCheckBoxList.getItemsCount(); i++) {
@@ -663,11 +780,18 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         consolePanel.info("[Template] Copied " + selected.size() + " template(s)");
     }
 
+    /**
+     * 写入系统剪贴板。
+     * @param content 文本内容
+     */
     private void copyToClipboard(String content) {
         java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(content);
         java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
     }
 
+    /**
+     * 添加新的自定义模板。
+     */
     private void addNewTemplate() {
         AddTemplateDialog dialog = new AddTemplateDialog(project);
         if (dialog.showAndGet()) {
@@ -686,6 +810,9 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 删除当前选中的模板。
+     */
     private void deleteSelectedTemplate() {
         int index = templateCheckBoxList.getSelectedIndex();
         if (index < 0) return;
@@ -715,6 +842,9 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 切换模板收藏状态。
+     */
     private void toggleFavorite() {
         int index = templateCheckBoxList.getSelectedIndex();
         if (index < 0) return;
@@ -734,19 +864,34 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 设置当前平台（用于模板过滤）。
+     * @param platform 平台
+     */
     public void setCurrentPlatform(@Nullable ZaFridaPlatform platform) {
         this.currentPlatform = platform;
     }
 
+    /**
+     * 设置当前脚本文件。
+     * @param file 脚本文件
+     */
     public void setCurrentScriptFile(@Nullable VirtualFile file) {
         this.currentScriptFile = file;
         ApplicationManager.getApplication().invokeLater(this::syncCheckboxStatesWithScript);
     }
 
+    /**
+     * 获取当前脚本文件。
+     * @return 脚本文件或 null
+     */
     public @Nullable VirtualFile getCurrentScriptFile() {
         return currentScriptFile;
     }
 
+    /**
+     * 释放资源。
+     */
     @Override
     public void dispose() {
         if (previewEditor != null) {
@@ -755,7 +900,13 @@ public final class ZaFridaTemplatePanel extends JPanel implements Disposable {
         }
     }
 
+    /**
+     * 分类列表渲染器。
+     */
     private static class CategoryListRenderer extends DefaultListCellRenderer {
+        /**
+         * 渲染分类列表项。
+         */
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                       boolean isSelected, boolean cellHasFocus) {

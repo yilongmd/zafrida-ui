@@ -23,21 +23,34 @@ import java.util.stream.Stream;
  */
 public class ZaFridaTemplateService {
 
+    /** 日志记录器 */
     private static final Logger LOG = Logger.getInstance(ZaFridaTemplateService.class);
 
+    /** 内置模板资源根路径 */
     private static final String TEMPLATES_RESOURCE_PATH = "/templates";
+    /** 用户模板目录（相对用户目录） */
     private static final String USER_TEMPLATES_DIR = "zafrida/templates";
+    /** 自定义模板目录名 */
     private static final String CUSTOM_DIR = "custom";
+    /** Android 模板目录名 */
     private static final String ANDROID_DIR = "android";
+    /** iOS 模板目录名 */
     private static final String IOS_DIR = "ios";
 
+    /** 当前 IDE 项目 */
     private final @NotNull Project project;
+    /** 用户模板根目录 */
     private final @NotNull Path userTemplatesRoot;
 
+    /** 模板缓存列表 */
     private final List<ZaFridaTemplate> cachedTemplates = new ArrayList<>();
     /** 强制覆盖内置模板开关（开发调试用） */
     private static final boolean FORCE_OVERWRITE_BUILTIN = true;
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     */
     public ZaFridaTemplateService(@NotNull Project project) {
         this.project = project;
 

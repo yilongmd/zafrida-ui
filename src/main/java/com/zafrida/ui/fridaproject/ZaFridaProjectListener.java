@@ -11,5 +11,9 @@ import org.jetbrains.annotations.Nullable;
  * 通知 UI 组件（如 {@link com.zafrida.ui.ui.ZaFridaRunPanel}）刷新状态，加载新项目的配置（包名、脚本等）。
  */
 public interface ZaFridaProjectListener {
+    /**
+     * 当前激活项目发生变化时回调。
+     * @param newProject 新的激活项目（可为 null）
+     */
     void onActiveProjectChanged(@Nullable ZaFridaFridaProject newProject);
 }

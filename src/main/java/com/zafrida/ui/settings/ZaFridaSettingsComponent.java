@@ -31,21 +31,36 @@ import java.util.List;
  */
 public final class ZaFridaSettingsComponent {
 
+    /** frida 路径输入框 */
     private final JBTextField fridaField = new JBTextField();
+    /** frida-ps 路径输入框 */
     private final JBTextField fridaPsField = new JBTextField();
+    /** frida-ls-devices 路径输入框 */
     private final JBTextField fridaLsDevicesField = new JBTextField();
+    /** 日志目录输入框 */
     private final JBTextField logsDirField = new JBTextField();
+    /** 默认远程主机输入框 */
     private final JBTextField defaultRemoteHostField = new JBTextField();
+    /** 默认远程端口输入框 */
     private final JBTextField defaultRemotePortField = new JBTextField();
+    /** 是否使用 IDE 脚本选择器 */
     private final JBCheckBox useIdeScriptChooserCheckBox = new JBCheckBox("Use IDE script chooser (Project tree)");
 
+    /** 远程主机列表模型 */
     private final DefaultListModel<String> remoteModel = new DefaultListModel<>();
+    /** 远程主机列表组件 */
     private final JBList<String> remoteList = new JBList<>(remoteModel);
+    /** 添加远程主机按钮 */
     private final JButton addRemoteBtn = new JButton("Add");
+    /** 移除远程主机按钮 */
     private final JButton removeRemoteBtn = new JButton("Remove");
 
+    /** 根面板 */
     private final JComponent panel;
 
+    /**
+     * 构造函数，初始化 UI。
+     */
     public ZaFridaSettingsComponent() {
         addRemoteBtn.setIcon(AllIcons.General.Add);
         removeRemoteBtn.setIcon(AllIcons.General.Remove);
@@ -95,10 +110,18 @@ public final class ZaFridaSettingsComponent {
         });
     }
 
+    /**
+     * 获取根面板。
+     * @return 面板组件
+     */
     public @NotNull JComponent getPanel() {
         return panel;
     }
 
+    /**
+     * 使用状态重置 UI。
+     * @param state 配置状态
+     */
     public void reset(@NotNull ZaFridaSettingsState state) {
         fridaField.setText(orDefault(state.fridaExecutable, "frida"));
         fridaPsField.setText(orDefault(state.fridaPsExecutable, "frida-ps"));
@@ -116,6 +139,10 @@ public final class ZaFridaSettingsComponent {
         }
     }
 
+    /**
+     * 将 UI 值写回状态对象。
+     * @param state 配置状态
+     */
     public void applyTo(@NotNull ZaFridaSettingsState state) {
         state.fridaExecutable = textOrDefault(fridaField.getText(), "frida");
         state.fridaPsExecutable = textOrDefault(fridaPsField.getText(), "frida-ps");
@@ -132,6 +159,11 @@ public final class ZaFridaSettingsComponent {
         state.remoteHosts = remotes;
     }
 
+    /**
+     * 判断远程主机是否已存在。
+     * @param host 主机字符串
+     * @return true 表示已存在
+     */
     private boolean containsRemote(String host) {
         for (int i = 0; i < remoteModel.size(); i++) {
             if (host.equals(remoteModel.getElementAt(i))) return true;
@@ -139,17 +171,35 @@ public final class ZaFridaSettingsComponent {
         return false;
     }
 
+    /**
+     * 获取文本或默认值（允许空白）。
+     * @param s 输入文本
+     * @param d 默认值
+     * @return 结果字符串
+     */
     private static String textOrDefault(String s, String d) {
         if (s == null) return d;
         String t = s.trim();
         return t.isEmpty() ? d : t;
     }
 
+    /**
+     * 获取文本或默认值（空白视为默认）。
+     * @param s 输入文本
+     * @param d 默认值
+     * @return 结果字符串
+     */
     private static String orDefault(String s, String d) {
         if (s == null || s.trim().isEmpty()) return d;
         return s;
     }
 
+    /**
+     * 解析端口文本。
+     * @param s 输入文本
+     * @param fallback 回退值
+     * @return 端口值
+     */
     private static int parsePort(String s, int fallback) {
         if (s == null || s.trim().isEmpty()) return fallback;
         try {

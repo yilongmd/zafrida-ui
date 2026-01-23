@@ -86,6 +86,7 @@ public final class ZaFridaLogPaths {
             }
         } catch (Throwable ignored) {
             // ignore
+            // 忽略异常
         }
         return file;
     }

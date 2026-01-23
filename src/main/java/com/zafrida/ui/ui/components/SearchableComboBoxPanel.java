@@ -22,13 +22,22 @@ import java.util.function.Function;
  */
 public final class SearchableComboBoxPanel<T> extends JPanel {
 
+    /** 搜索输入框 */
     private final JBTextField search = new JBTextField();
+    /** 下拉框组件 */
     private final ComboBox<T> combo = new ComboBox<>();
+    /** 下拉框数据模型 */
     private final DefaultComboBoxModel<T> model = new DefaultComboBoxModel<>();
+    /** 文本展示函数 */
     private final Function<T, String> text;
 
+    /** 全量数据列表 */
     private List<T> all = new ArrayList<>();
 
+    /**
+     * 构造函数。
+     * @param textProvider 文本展示函数
+     */
     public SearchableComboBoxPanel(@NotNull Function<T, String> textProvider) {
         super(new BorderLayout(0, 0));
         this.text = textProvider;
@@ -44,25 +53,61 @@ public final class SearchableComboBoxPanel<T> extends JPanel {
         add(combo, BorderLayout.CENTER);
     }
 
-    public JBTextField getSearchField() { return search; }
+    /**
+     * 获取搜索输入框。
+     * @return 搜索输入框
+     */
+    public JBTextField getSearchField() {
+        return search;
+    }
 
+    /**
+     * 设置下拉框数据项。
+     * @param items 数据项列表
+     */
     public void setItems(@NotNull List<T> items) {
         this.all = new ArrayList<>(items);
         refilter();
     }
 
-    public @Nullable T getSelectedItem() { return (T) combo.getSelectedItem(); }
+    /**
+     * 获取当前选中项。
+     * @return 选中项或 null
+     */
+    public @Nullable T getSelectedItem() {
+        return (T) combo.getSelectedItem();
+    }
 
-    public void setSelectedItem(@Nullable T v) { combo.setSelectedItem(v); }
+    /**
+     * 设置当前选中项。
+     * @param v 选中项
+     */
+    public void setSelectedItem(@Nullable T v) {
+        combo.setSelectedItem(v);
+    }
 
-    public void addActionListener(@NotNull java.awt.event.ActionListener l) { combo.addActionListener(l); }
+    /**
+     * 添加动作监听。
+     * @param l 监听器
+     */
+    public void addActionListener(@NotNull java.awt.event.ActionListener l) {
+        combo.addActionListener(l);
+    }
 
-    @Override public void setEnabled(boolean enabled) {
+    /**
+     * 设置启用状态。
+     * @param enabled 是否启用
+     */
+    @Override
+    public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
         search.setEnabled(enabled);
         combo.setEnabled(enabled);
     }
 
+    /**
+     * 按搜索关键字重新过滤数据。
+     */
     private void refilter() {
         String q = StringUtil.toLowerCase(search.getText().trim());
         model.removeAllElements();

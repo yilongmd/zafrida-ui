@@ -180,6 +180,7 @@ public class ZaFridaProjectConfigurable implements Configurable {
         devicePanel.add(connectionModeCombo, gbc);
 
         // Remote Host
+        // 远程主机
         gbc.gridx = 0;
         gbc.gridy = 1;
         gbc.fill = GridBagConstraints.NONE;
@@ -266,6 +267,7 @@ public class ZaFridaProjectConfigurable implements Configurable {
         contentPanel.add(previewPanel);
 
         // Hints
+        // 使用提示
         contentPanel.add(Box.createVerticalStrut(16));
         JBLabel hintLabel2 = new JBLabel(
                 "<html><small style='color:gray'>" +

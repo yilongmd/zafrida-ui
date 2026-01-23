@@ -15,23 +15,40 @@ import javax.swing.JComponent;
  */
 public final class ZaFridaSettingsConfigurable implements SearchableConfigurable {
 
+    /** 全局设置服务 */
     private final ZaFridaSettingsService settingsService;
+    /** UI 组件实例 */
     private @Nullable ZaFridaSettingsComponent component;
 
+    /**
+     * 构造函数。
+     */
     public ZaFridaSettingsConfigurable() {
         this.settingsService = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
     }
 
+    /**
+     * 配置项 ID。
+     * @return 配置 ID
+     */
     @Override
     public @NotNull String getId() {
         return "com.zafrida.ui.settings";
     }
 
+    /**
+     * 配置项显示名称。
+     * @return 显示名称
+     */
     @Override
     public String getDisplayName() {
         return "ZAFrida";
     }
 
+    /**
+     * 创建设置面板组件。
+     * @return UI 组件
+     */
     @Override
     public @Nullable JComponent createComponent() {
         ZaFridaSettingsComponent c = new ZaFridaSettingsComponent();
@@ -40,12 +57,17 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return c.getPanel();
     }
 
+    /**
+     * 判断配置是否被修改。
+     * @return true 表示有修改
+     */
     @Override
     public boolean isModified() {
         if (component == null) return false;
 
         ZaFridaSettingsState copy = new ZaFridaSettingsState();
         // start from current state
+        // 从当前状态拷贝作为基准
         copy.fridaExecutable = settingsService.getState().fridaExecutable;
         copy.fridaPsExecutable = settingsService.getState().fridaPsExecutable;
         copy.fridaLsDevicesExecutable = settingsService.getState().fridaLsDevicesExecutable;
@@ -58,6 +80,7 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         component.applyTo(copy);
 
         // compare
+        // 对比新旧配置
         ZaFridaSettingsState current = settingsService.getState();
         if (!safeEq(copy.fridaExecutable, current.fridaExecutable)) return true;
         if (!safeEq(copy.fridaPsExecutable, current.fridaPsExecutable)) return true;
@@ -74,6 +97,9 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return false;
     }
 
+    /**
+     * 应用设置改动。
+     */
     @Override
     public void apply() {
         if (component == null) return;
@@ -91,6 +117,9 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         settingsService.loadState(newState);
     }
 
+    /**
+     * 重置 UI 为当前持久化状态。
+     */
     @Override
     public void reset() {
         if (component != null) {
@@ -98,11 +127,20 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         }
     }
 
+    /**
+     * 释放 UI 资源。
+     */
     @Override
     public void disposeUIResources() {
         component = null;
     }
 
+    /**
+     * 安全比较字符串相等性。
+     * @param a 字符串 A
+     * @param b 字符串 B
+     * @return true 表示相等
+     */
     private static boolean safeEq(String a, String b) {
         if (a == null) return b == null;
         return a.equals(b);

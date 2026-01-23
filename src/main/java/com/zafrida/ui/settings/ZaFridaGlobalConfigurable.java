@@ -24,34 +24,58 @@ import java.awt.*;
  */
 public class ZaFridaGlobalConfigurable implements Configurable {
 
+    /** 全局设置实例 */
     private final ZaFridaGlobalSettings settings = ZaFridaGlobalSettings.getInstance();
 
+    /** 根面板 */
     private JPanel mainPanel;
+    /** frida 路径选择框 */
     private TextFieldWithBrowseButton fridaPathField;
+    /** python 路径选择框 */
     private TextFieldWithBrowseButton pythonPathField;
+    /** frida-ps 路径输入框 */
     private JBTextField fridaPsPathField;
+    /** frida-ls-devices 路径输入框 */
     private JBTextField fridaLsDevicesPathField;
 
+    /** 默认远程主机输入框 */
     private JBTextField defaultRemoteHostField;
+    /** 默认远程端口输入框 */
     private JBTextField defaultRemotePortField;
 
+    /** 控制台最大行数输入框 */
     private JBTextField maxConsoleLinesField;
+    /** 控制台自动滚动复选框 */
     private JBCheckBox autoScrollConsoleCheckBox;
+    /** 控制台字体大小输入框 */
     private JBTextField consoleFontSizeField;
 
+    /** 自动同步模板复选框 */
     private JBCheckBox autoSyncTemplatesCheckBox;
+    /** 显示快捷键提示复选框 */
     private JBCheckBox showKeyboardHintsCheckBox;
+    /** 详细日志模式复选框 */
     private JBCheckBox verboseModeCheckBox;
 
+    /** 自动刷新设备列表复选框 */
     private JBCheckBox autoRefreshDevicesCheckBox;
+    /** 设备刷新间隔输入框 */
     private JBTextField refreshDeviceIntervalField;
 
     @Nls(capitalization = Nls.Capitalization.Title)
+    /**
+     * 设置页面显示名称。
+     * @return 显示名称
+     */
     @Override
     public String getDisplayName() {
         return "ZaFrida";
     }
 
+    /**
+     * 创建设置面板组件。
+     * @return 面板组件
+     */
     @Override
     public @Nullable JComponent createComponent() {
         mainPanel = new JPanel(new BorderLayout());
@@ -251,12 +275,21 @@ public class ZaFridaGlobalConfigurable implements Configurable {
         return mainPanel;
     }
 
+    /**
+     * 创建分节标题标签。
+     * @param text 标题文本
+     * @return 标签组件
+     */
     private JBLabel createSectionLabel(String text) {
         JBLabel label = new JBLabel(text);
         label.setFont(label.getFont().deriveFont(Font.BOLD, 13f));
         return label;
     }
 
+    /**
+     * 判断设置是否发生修改。
+     * @return true 表示已修改
+     */
     @Override
     public boolean isModified() {
         if (!fridaPathField.getText().equals(settings.fridaPath)) return true;
@@ -276,6 +309,9 @@ public class ZaFridaGlobalConfigurable implements Configurable {
         return false;
     }
 
+    /**
+     * 应用设置改动。
+     */
     @Override
     public void apply() {
         settings.fridaPath = fridaPathField.getText().trim();
@@ -315,6 +351,9 @@ public class ZaFridaGlobalConfigurable implements Configurable {
         settings.autoRefreshDevices = autoRefreshDevicesCheckBox.isSelected();
     }
 
+    /**
+     * 重置 UI 为当前配置。
+     */
     @Override
     public void reset() {
         fridaPathField.setText(settings.fridaPath);

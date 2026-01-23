@@ -13,16 +13,28 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class SpawnRunMode implements FridaRunMode {
 
+    /** 目标包名或 Bundle ID */
     private final @NotNull String identifier;
 
+    /**
+     * 构造函数。
+     * @param identifier 目标包名或 Bundle ID
+     */
     public SpawnRunMode(@NotNull String identifier) {
         this.identifier = identifier;
     }
 
+    /**
+     * 获取目标标识。
+     * @return 目标包名或 Bundle ID
+     */
     public @NotNull String getIdentifier() {
         return identifier;
     }
 
+    /**
+     * 返回该运行模式的字符串表示形式。
+     */
     @Override
     public String toString() {
         return "Spawn(-f " + identifier + ")";

@@ -15,24 +15,76 @@ import java.util.Objects;
  * </ul>
  */
 public final class ZaFridaFridaProject {
+    /** 项目名称 */
     private final @NotNull String name;
+    /** 目标平台 */
     private final @NotNull ZaFridaPlatform platform;
+    /** 相对目录路径 */
     private final @NotNull String relativeDir; // android/<name> or ios/<name>
+    // android/<name> 或 ios/<name>
 
+    /**
+     * 构造函数。
+     * @param name 项目名称
+     * @param platform 目标平台
+     * @param relativeDir 相对目录路径
+     */
     public ZaFridaFridaProject(@NotNull String name, @NotNull ZaFridaPlatform platform, @NotNull String relativeDir) {
         this.name = name;
         this.platform = platform;
         this.relativeDir = relativeDir;
     }
-    public @NotNull String getName() { return name; }
-    public @NotNull ZaFridaPlatform getPlatform() { return platform; }
-    public @NotNull String getRelativeDir() { return relativeDir; }
 
-    @Override public String toString() { return name + " (" + relativeDir + ")"; }
-    @Override public boolean equals(Object o) {
+    /**
+     * 获取项目名称。
+     * @return 项目名称
+     */
+    public @NotNull String getName() {
+        return name;
+    }
+
+    /**
+     * 获取目标平台。
+     * @return ZaFridaPlatform
+     */
+    public @NotNull ZaFridaPlatform getPlatform() {
+        return platform;
+    }
+
+    /**
+     * 获取相对目录路径。
+     * @return 相对目录路径
+     */
+    public @NotNull String getRelativeDir() {
+        return relativeDir;
+    }
+
+    /**
+     * 返回项目简要描述。
+     */
+    @Override
+    public String toString() {
+        return name + " (" + relativeDir + ")";
+    }
+
+    /**
+     * 判断项目是否相等。
+     * @param o 比较对象
+     * @return true 表示相等
+     */
+    @Override
+    public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof ZaFridaFridaProject p)) return false;
         return name.equals(p.name) && platform == p.platform && relativeDir.equals(p.relativeDir);
     }
-    @Override public int hashCode() { return Objects.hash(name, platform, relativeDir); }
+
+    /**
+     * 计算哈希值。
+     * @return 哈希值
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, platform, relativeDir);
+    }
 }

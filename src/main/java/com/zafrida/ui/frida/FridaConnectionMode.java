@@ -11,20 +11,35 @@ package com.zafrida.ui.frida;
  * </ul>
  */
 public enum FridaConnectionMode {
+    /** USB 直连模式 */
     USB("USB"),
+    /** 远程 frida-server 模式 */
     REMOTE("Remote"),
+    /** Gadget 附加模式 */
     GADGET("Gadget");
 
+    /** 显示名称 */
     private final String displayName;
 
+    /**
+     * 构造函数。
+     * @param displayName 显示名称
+     */
     FridaConnectionMode(String displayName) {
         this.displayName = displayName;
     }
 
+    /**
+     * 获取显示名称。
+     * @return 显示名称
+     */
     public String getDisplayName() {
         return displayName;
     }
 
+    /**
+     * 返回显示名称。
+     */
     @Override
     public String toString() {
         return displayName;

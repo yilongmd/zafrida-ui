@@ -30,20 +30,37 @@ import java.util.List;
  */
 public final class FridaCliService {
 
+    /** 日志记录器 */
     private static final Logger LOG = Logger.getInstance(FridaCliService.class);
 
+    /** 设置服务 */
     private final ZaFridaSettingsService settings;
 
+    /**
+     * 构造函数。
+     */
     public FridaCliService() {
         this.settings = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
     }
 
+    /**
+     * 列出当前可用设备。
+     * @param project 当前 IDE 项目
+     * @return 设备列表
+     */
     public @NotNull List<FridaDevice> listDevices(@NotNull Project project) {
         GeneralCommandLine cmd = buildLsDevicesCommandLine(project);
         CapturedOut out = runCapturing(cmd, 15_000);
         return FridaOutputParsers.parseDevices(out.stdout);
     }
 
+    /**
+     * 列出设备上的进程或应用。
+     * @param project 当前 IDE 项目
+     * @param device 目标设备
+     * @param scope 列表作用域
+     * @return 进程/应用列表
+     */
     public @NotNull List<FridaProcess> listProcesses(@NotNull Project project,
                                                      @NotNull FridaDevice device,
                                                      @NotNull FridaProcessScope scope) {
@@ -52,6 +69,12 @@ public final class FridaCliService {
         return FridaOutputParsers.parseProcesses(out.stdout);
     }
 
+    /**
+     * 构建执行 Frida 的命令行对象。
+     * @param project 当前 IDE 项目
+     * @param config 运行配置
+     * @return GeneralCommandLine
+     */
     public @NotNull GeneralCommandLine buildRunCommandLine(@NotNull Project project, @NotNull FridaRunConfig config) {
         ZaFridaSettingsState s = settings.getState();
         GeneralCommandLine cmd = new GeneralCommandLine(s.fridaExecutable)
@@ -87,6 +110,12 @@ public final class FridaCliService {
         return cmd;
     }
 
+    /**
+     * 创建并返回运行进程处理器。
+     * @param project 当前 IDE 项目
+     * @param config 运行配置
+     * @return OSProcessHandler
+     */
     public @NotNull OSProcessHandler createRunProcessHandler(@NotNull Project project, @NotNull FridaRunConfig config) {
         try {
             return new OSProcessHandler(buildRunCommandLine(project, config));
@@ -95,6 +124,11 @@ public final class FridaCliService {
         }
     }
 
+    /**
+     * 构建 frida-ls-devices 命令行。
+     * @param project 当前 IDE 项目
+     * @return GeneralCommandLine
+     */
     private @NotNull GeneralCommandLine buildLsDevicesCommandLine(@NotNull Project project) {
         ZaFridaSettingsState s = settings.getState();
         GeneralCommandLine cmd = new GeneralCommandLine(s.fridaLsDevicesExecutable)
@@ -103,6 +137,13 @@ public final class FridaCliService {
         return cmd;
     }
 
+    /**
+     * 构建 frida-ps 命令行。
+     * @param project 当前 IDE 项目
+     * @param device 目标设备
+     * @param scope 查询范围
+     * @return GeneralCommandLine
+     */
     private @NotNull GeneralCommandLine buildPsCommandLine(@NotNull Project project,
                                                            @NotNull FridaDevice device,
                                                            @NotNull FridaProcessScope scope) {
@@ -117,6 +158,7 @@ public final class FridaCliService {
         switch (scope) {
             case RUNNING_PROCESSES -> {
                 // default
+                // 默认行为
             }
             case RUNNING_APPS -> cmd.addParameter("-a");
             case INSTALLED_APPS -> cmd.addParameters("-a", "-i");
@@ -125,8 +167,14 @@ public final class FridaCliService {
         return cmd;
     }
 
+    /**
+     * 注入项目 Python 环境到命令行。
+     * @param project 当前 IDE 项目
+     * @param cmd 命令行对象
+     */
     private void applyProjectPythonEnv(@NotNull Project project, @NotNull GeneralCommandLine cmd) {
         // Make sure we inherit the parent environment, then prepend the project interpreter's PATH.
+        // 确保继承父环境变量，并将项目解释器路径追加到 PATH 前面。
         cmd.withParentEnvironmentType(GeneralCommandLine.ParentEnvironmentType.CONSOLE);
         PythonEnvInfo env = ProjectPythonEnvResolver.resolve(project);
         if (env != null) {
@@ -134,6 +182,11 @@ public final class FridaCliService {
         }
     }
 
+    /**
+     * 根据设备信息添加连接参数。
+     * @param cmd 命令行对象
+     * @param device 目标设备
+     */
     private void addDeviceArgs(@NotNull GeneralCommandLine cmd, @NotNull FridaDevice device) {
         if (device.getMode() == FridaDeviceMode.HOST) {
             String host = device.getHost();
@@ -151,6 +204,12 @@ public final class FridaCliService {
         }
     }
 
+    /**
+     * 执行命令并捕获输出。
+     * @param cmd 命令行对象
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 捕获结果
+     */
     private CapturedOut runCapturing(@NotNull GeneralCommandLine cmd, int timeoutMs) {
         CapturingProcessHandler handler = null;
         try {

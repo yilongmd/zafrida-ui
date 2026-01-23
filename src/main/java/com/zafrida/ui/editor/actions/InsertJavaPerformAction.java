@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
  * 以确保代码被附加到虚拟机的相关线程中执行。
  */
 public class InsertJavaPerformAction extends InsertFridaSnippetAction {
+    /** 内置代码片段 */
     private static final @NotNull String SNIPPET = String.join("\n",
             """
                     Java.perform(function () {
@@ -20,6 +21,9 @@ public class InsertJavaPerformAction extends InsertFridaSnippetAction {
                     """
     );
 
+    /**
+     * 构造函数。
+     */
     public InsertJavaPerformAction() {
         super("Frida: Java.perform block", SNIPPET);
     }

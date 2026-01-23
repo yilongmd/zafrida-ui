@@ -15,7 +15,10 @@ import java.util.List;
  * 2. 记录上次激活的项目 (Active Project)，以便 IDE 重启后自动恢复状态。
  */
 public final class ZaFridaWorkspaceConfig {
+    /** 配置版本号 */
     public static final int VERSION = 1;
+    /** 上次激活的项目名称 */
     public @Nullable String lastSelected = null;
+    /** 已注册项目列表 */
     public final List<ZaFridaFridaProject> projects = new ArrayList<>();
 }

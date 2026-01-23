@@ -18,6 +18,10 @@ import com.zafrida.ui.util.ZaFridaNotifier;
  */
 public final class NewZaFridaProjectAction extends AnAction {
 
+    /**
+     * 菜单执行逻辑。
+     * @param e Action 事件
+     */
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();

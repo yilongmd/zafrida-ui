@@ -24,12 +24,24 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
 
+/**
+ * [Action] 在编辑器中运行当前 Frida JS 脚本。
+ * <p>
+ * 自动切换到脚本所属的 ZAFrida 项目并触发 Run 面板运行。
+ */
 public final class RunFridaJsAction extends AnAction {
 
+    /**
+     * 构造函数，设置菜单图标。
+     */
     public RunFridaJsAction() {
         getTemplatePresentation().setIcon(ZaFridaIcons.RUN_FRIDA);
     }
 
+    /**
+     * 菜单可用性更新逻辑。
+     * @param e Action 事件
+     */
     @Override
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -39,6 +51,10 @@ public final class RunFridaJsAction extends AnAction {
         e.getPresentation().setEnabled(enabled);
     }
 
+    /**
+     * 菜单执行逻辑。
+     * @param e Action 事件
+     */
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -97,11 +113,21 @@ public final class RunFridaJsAction extends AnAction {
         toolWindow.activate(runTask);
     }
 
+    /**
+     * 判断是否为 JavaScript 文件。
+     * @param file 文件对象
+     * @return true 表示为 JS 文件
+     */
     private static boolean isJsFile(@NotNull VirtualFile file) {
         String ext = file.getExtension();
         return ext != null && ext.equalsIgnoreCase("js");
     }
 
+    /**
+     * 解析当前脚本文件。
+     * @param e Action 事件
+     * @return 脚本文件或 null
+     */
     private static @Nullable VirtualFile resolveScriptFile(@NotNull AnActionEvent e) {
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
         if (file != null) return file;
@@ -114,6 +140,12 @@ public final class RunFridaJsAction extends AnAction {
         return null;
     }
 
+    /**
+     * 查找脚本所属的 Frida 项目目录。
+     * @param project 当前 IDE 项目
+     * @param file 脚本文件
+     * @return 项目目录或 null
+     */
     private static @Nullable VirtualFile findFridaProjectDir(@NotNull Project project, @NotNull VirtualFile file) {
         VirtualFile base = project.getBaseDir();
         if (base == null) return null;
@@ -130,6 +162,11 @@ public final class RunFridaJsAction extends AnAction {
         return null;
     }
 
+    /**
+     * 在 ToolWindow 中查找 Run 面板。
+     * @param toolWindow 工具窗口
+     * @return Run 面板或 null
+     */
     private static @Nullable ZaFridaRunPanel findRunPanel(@NotNull ToolWindow toolWindow) {
         Content[] contents = toolWindow.getContentManager().getContents();
         for (Content content : contents) {

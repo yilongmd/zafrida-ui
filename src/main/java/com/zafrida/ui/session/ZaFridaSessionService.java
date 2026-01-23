@@ -31,17 +31,37 @@ import java.util.function.Consumer;
  */
 public final class ZaFridaSessionService implements Disposable {
 
+    /** IDE 项目实例 */
     private final @NotNull Project project;
+    /** Frida CLI 服务实例 */
     private final @NotNull FridaCliService fridaCliService;
 
+    /** 会话类型到运行会话的映射 */
     private final EnumMap<ZaFridaSessionType, RunningSession> sessions = new EnumMap<>(ZaFridaSessionType.class);
+    /** 会话类型到日志写入器的映射 */
     private final EnumMap<ZaFridaSessionType, SessionLogWriter> logWriters = new EnumMap<>(ZaFridaSessionType.class);
 
+    /**
+     * 构造函数。
+     * @param project 当前 IDE 项目
+     */
     public ZaFridaSessionService(@NotNull Project project) {
         this.project = project;
         this.fridaCliService = ApplicationManager.getApplication().getService(FridaCliService.class);
     }
 
+    /**
+     * 启动指定类型的会话。
+     *
+     * @param type 会话类型（Run/Attach）
+     * @param config Frida 运行配置
+     * @param consoleView 控制台视图
+     * @param info 信息输出回调
+     * @param error 错误输出回调
+     * @param fridaProjectDir Frida 项目目录（可选）
+     * @param targetPackage 目标包名（可选）
+     * @return 已创建的运行会话
+     */
     public synchronized @NotNull RunningSession start(@NotNull ZaFridaSessionType type,
                                                       @NotNull FridaRunConfig config,
                                                       @NotNull ConsoleView consoleView,
@@ -64,6 +84,7 @@ public final class ZaFridaSessionService implements Disposable {
         }
 
         // show command line
+        // 显示命令行
         String cmdLine = fridaCliService.buildRunCommandLine(project, config).getCommandLineString();
         info.accept("[ZAFrida] Command: " + cmdLine);
 
@@ -105,6 +126,10 @@ public final class ZaFridaSessionService implements Disposable {
         return session;
     }
 
+    /**
+     * 停止指定类型的会话。
+     * @param type 会话类型
+     */
     public synchronized void stop(@NotNull ZaFridaSessionType type) {
         RunningSession session = sessions.remove(type);
         if (session != null) {
@@ -126,17 +151,30 @@ public final class ZaFridaSessionService implements Disposable {
         }
     }
 
+    /**
+     * 停止所有会话。
+     */
     public synchronized void stop() {
         for (ZaFridaSessionType type : ZaFridaSessionType.values()) {
             stop(type);
         }
     }
 
+    /**
+     * 判断指定类型的会话是否仍在运行。
+     * @param type 会话类型
+     * @return true 表示运行中
+     */
     public synchronized boolean isRunning(@NotNull ZaFridaSessionType type) {
         RunningSession session = sessions.get(type);
         return session != null && !session.getProcessHandler().isProcessTerminated();
     }
 
+    /**
+     * 创建用于更新 UI 状态的进程监听器。
+     * @param onTerminated 进程结束回调
+     * @return ProcessAdapter 实例
+     */
     public @NotNull ProcessAdapter createUiStateListener(@NotNull Runnable onTerminated) {
         return new ProcessAdapter() {
             @Override
@@ -146,6 +184,9 @@ public final class ZaFridaSessionService implements Disposable {
         };
     }
 
+    /**
+     * 释放资源并停止所有会话。
+     */
     @Override
     public void dispose() {
         stop();

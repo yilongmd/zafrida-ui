@@ -17,6 +17,9 @@ import javax.swing.JList;
  * 用于 {@link com.zafrida.ui.fridaproject.ui.ZaFridaProjectSettingsDialog} 中的目标选择下拉框。
  */
 public final class ProcessCellRenderer extends ColoredListCellRenderer<FridaProcess> {
+    /**
+     * 渲染进程下拉项。
+     */
     @Override
     protected void customizeCellRenderer(@NotNull JList<? extends FridaProcess> list,
                                          @Nullable FridaProcess value,

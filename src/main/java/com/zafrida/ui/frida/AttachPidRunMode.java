@@ -10,16 +10,28 @@ package com.zafrida.ui.frida;
  */
 public final class AttachPidRunMode implements FridaRunMode {
 
+    /** 目标进程 PID */
     private final int pid;
 
+    /**
+     * 构造函数。
+     * @param pid 目标进程 PID
+     */
     public AttachPidRunMode(int pid) {
         this.pid = pid;
     }
 
+    /**
+     * 获取目标进程 PID。
+     * @return PID
+     */
     public int getPid() {
         return pid;
     }
 
+    /**
+     * 返回该运行模式的字符串表示形式。
+     */
     @Override
     public String toString() {
         return "Attach(-p " + pid + ")";
