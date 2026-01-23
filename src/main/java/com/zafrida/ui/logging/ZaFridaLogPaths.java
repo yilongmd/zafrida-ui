@@ -21,6 +21,7 @@ import java.time.format.DateTimeFormatter;
  */
 public final class ZaFridaLogPaths {
 
+    /** 时间戳格式化器 */
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
     private ZaFridaLogPaths() {

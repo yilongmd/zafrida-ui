@@ -44,6 +44,14 @@ public final class ProjectPythonEnvResolver {
     private ProjectPythonEnvResolver() {
     }
 
+    /**
+     * 尝试解析当前 Project 关联的 Python 环境信息。
+     * <p>
+     * 如果未找到合适的 Python SDK，或解析过程中发生错误，则返回 null。
+     *
+     * @param project 当前 IDE Project
+     * @return 解析到的 PythonEnvInfo，或 null 如果未找到或解析失败
+     */
     public static @Nullable PythonEnvInfo resolve(@NotNull Project project) {
         try {
             Sdk sdk = findPythonSdk(project);
@@ -75,6 +83,14 @@ public final class ProjectPythonEnvResolver {
      * So we try:
      * 1) Project SDK
      * 2) Each Module SDK
+     */
+    /**
+     * 尝试在当前 Project 中查找关联的 Python SDK。
+     * <p>
+     * 优先检查 Project SDK，然后遍历所有 Module 的 SDK。
+     *
+     * @param project 当前 IDE Project
+     * @return 找到的 Python Sdk，或 null 如果未找到
      */
     private static @Nullable Sdk findPythonSdk(@NotNull Project project) {
         // 1) project sdk
@@ -108,6 +124,12 @@ public final class ProjectPythonEnvResolver {
         return null;
     }
 
+    /**
+     * 简单判断给定 SDK 是否可能是 Python SDK。
+     *
+     * @param sdk 待检查的 Sdk 实例
+     * @return 如果看起来像 Python SDK 则返回 true，否则返回 false
+     */
     private static boolean looksLikePythonSdk(@Nullable Sdk sdk) {
         if (sdk == null) return false;
 
@@ -133,7 +155,11 @@ public final class ProjectPythonEnvResolver {
         }
     }
 
-
+    /**
+     * 根据给定的 Python 可执行文件路径，构建对应的 PythonEnvInfo。
+     * @param pythonHome NotNull Path 指向 python 可执行文件的完整路径
+     * @return NotNull PythonEnvInfo 包含环境信息
+     */
     private static @NotNull PythonEnvInfo buildFromPythonHome(@NotNull Path pythonHome) {
         boolean windows = SystemInfoRt.isWindows;
         Path pythonDir = pythonHome.getParent();
@@ -195,6 +221,11 @@ public final class ProjectPythonEnvResolver {
         );
     }
 
+    /**
+     * 如果路径是目录，则将其绝对路径添加到集合中。
+     * @param out
+     * @param p
+     */
     private static void addIfDir(@NotNull Set<String> out, @NotNull Path p) {
         try {
             if (Files.isDirectory(p)) {
@@ -204,6 +235,12 @@ public final class ProjectPythonEnvResolver {
         }
     }
 
+    /**
+     * 将指定 Python 环境的信息注入到给定的命令行环境变量中，修补 PATH 变量。
+     *
+     * @param cmd 命令行对象，非空
+     * @param env Python 环境信息，非空
+     */
     public static void applyToCommandLine(@NotNull GeneralCommandLine cmd, @NotNull PythonEnvInfo env) {
         String pathKey = detectPathKey(cmd);
         String oldPath = readEnvVar(cmd, pathKey);
@@ -214,6 +251,13 @@ public final class ProjectPythonEnvResolver {
     /**
      * Try to locate a console script in the resolved python env.
      * Returns absolute path if found; otherwise null.
+     */
+    /**
+     * 尝试在给定的 Python 环境中查找指定的工具脚本。
+     *
+     * @param env      Python 环境信息，非空
+     * @param baseName 工具脚本的基本名称（不含扩展名），非空
+     * @return 如果找到则返回工具脚本的绝对路径，否则返回 null
      */
     public static @Nullable String findTool(@NotNull PythonEnvInfo env, @NotNull String baseName) {
         List<String> names = candidateNames(baseName);
@@ -238,6 +282,11 @@ public final class ProjectPythonEnvResolver {
         return null;
     }
 
+    /**
+     * 生成可能的工具脚本名称列表，考虑操作系统差异（如 Windows 的 .exe/.cmd/.bat 扩展名）。
+     * @param baseName
+     * @return NotNull List<String>
+     */
     private static @NotNull List<String> candidateNames(@NotNull String baseName) {
         boolean windows = SystemInfoRt.isWindows;
         List<String> out = new ArrayList<>();
@@ -252,6 +301,11 @@ public final class ProjectPythonEnvResolver {
         return out;
     }
 
+    /**
+     * 检测命令行环境变量中 PATH 变量的正确键名（考虑大小写差异）。
+     * @param cmd 命令行对象，非空
+     * @return PATH 变量的键名，非空
+     */
     private static @NotNull String detectPathKey(@NotNull GeneralCommandLine cmd) {
         // On Windows, the env var is typically "Path".
         if (cmd.getEnvironment().containsKey("Path")) return "Path";
@@ -261,6 +315,12 @@ public final class ProjectPythonEnvResolver {
         return "PATH";
     }
 
+    /**
+     * 读取命令行环境变量中的指定键值，若不存在则回退到系统环境变量。
+     * @param cmd 命令行对象，非空
+     * @param key 环境变量键名，非空
+     * @return 环境变量值，或 null 如果未找到
+     */
     private static @Nullable String readEnvVar(@NotNull GeneralCommandLine cmd, @NotNull String key) {
         String v = cmd.getEnvironment().get(key);
         if (v != null) return v;
@@ -275,11 +335,19 @@ public final class ProjectPythonEnvResolver {
         return null;
     }
 
+    /**
+     * 在原有 PATH 变量值前添加新的路径条目。
+     *
+     * @param prepend 需要添加的路径列表，非空
+     * @param original 原有的 PATH 变量值，可能为 null
+     * @return 新的 PATH 变量值，非空
+     */
     private static @NotNull String prependPath(@NotNull List<String> prepend, @Nullable String original) {
         if (prepend.isEmpty()) {
             return original != null ? original : "";
         }
 
+        // PATH 分隔符
         String sep = SystemInfoRt.isWindows ? ";" : ":";
         StringBuilder sb = new StringBuilder();
 

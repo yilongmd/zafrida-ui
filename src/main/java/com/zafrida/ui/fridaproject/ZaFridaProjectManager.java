@@ -32,21 +32,35 @@ import java.util.function.Consumer;
 @Service(Service.Level.PROJECT)
 public final class ZaFridaProjectManager {
 
+    /** 项目切换事件主题 */
     public static final Topic<ZaFridaProjectListener> TOPIC =
             Topic.create("ZAFrida.ProjectSelection", ZaFridaProjectListener.class);
 
+    /** 当前 IntelliJ/PyCharm 项目实例 */
     private final Project project;
+    /** 项目存储辅助类(@link ZaFridaProjectStorage) */
     private final ZaFridaProjectStorage storage = new ZaFridaProjectStorage();
 
+    /** 当前工作区配置 */
     private ZaFridaWorkspaceConfig workspace;
+    /** 按名称索引的项目映射 */
     private final Map<String, ZaFridaFridaProject> byName = new LinkedHashMap<>();
+    /** 当前激活的项目 */
     private @Nullable ZaFridaFridaProject active;
 
+    /**
+     * 构造函数，初始化项目管理器并加载工作区配置。
+     * @param project
+     */
     public ZaFridaProjectManager(@NotNull Project project) {
         this.project = project;
         reload();
     }
 
+    /**
+     * 重新加载工作区配置及项目列表。
+     * synchronized 确保线程安全。
+     */
     public synchronized void reload() {
         workspace = storage.loadWorkspace(project);
         byName.clear();
@@ -54,14 +68,29 @@ public final class ZaFridaProjectManager {
         active = workspace.lastSelected != null ? byName.get(workspace.lastSelected) : null;
     }
 
+    /**
+     * 列出当前工作区中的所有项目。
+     * synchronized 确保线程安全。
+     * @return 项目列表
+     */
     public synchronized @NotNull List<ZaFridaFridaProject> listProjects() {
         return new ArrayList<>(byName.values());
     }
 
+    /**
+     * 获取当前激活的项目。
+     * synchronized 确保线程安全。
+     * @return 当前激活的项目，若无则返回 null
+     */
     public synchronized @Nullable ZaFridaFridaProject getActiveProject() {
         return active;
     }
 
+    /**
+     * 根据目录查找对应的项目。
+     * @param dir 目标目录
+     * @return 对应的项目，若不存在则返回 null
+     */
     public @Nullable ZaFridaFridaProject findProjectByDir(@NotNull VirtualFile dir) {
         String rel = toRelativeDir(dir);
         if (rel == null) return null;
@@ -73,10 +102,18 @@ public final class ZaFridaProjectManager {
         return null;
     }
 
+    /**
+     * 注册一个已存在的项目目录。
+     * @param dir 目标目录
+     * @param activate 是否激活该项目
+     * @return 注册的项目实例，若目录无效则返回 null
+     */
     public @Nullable ZaFridaFridaProject registerExistingProject(@NotNull VirtualFile dir, boolean activate) {
+        // 计算相对路径
         String rel = toRelativeDir(dir);
         if (rel == null) return null;
 
+        // 读取项目配置
         ZaFridaProjectConfig cfg = storage.loadProjectConfig(project, dir);
         String name = StringUtil.isEmptyOrSpaces(cfg.name) ? dir.getName() : cfg.name;
         ZaFridaPlatform platform = inferPlatform(rel, cfg.platform);
@@ -100,15 +137,22 @@ public final class ZaFridaProjectManager {
             }
         }
 
+        // 保存 workspace（若新增且不激活）
         if (added && !activate) {
             storage.saveWorkspace(project, workspace);
         }
+        // 激活项目（若需要）
         if (activate && target != null) {
             setActiveProject(target);
         }
         return target;
     }
 
+    /**
+     * 设置当前激活的项目。
+     * synchronized 确保线程安全。
+     * @param p 要激活的项目，若为 null 则表示无激活项目
+     */
     public void setActiveProject(@Nullable ZaFridaFridaProject p) {
         synchronized (this) {
             active = p;
@@ -118,11 +162,21 @@ public final class ZaFridaProjectManager {
         project.getMessageBus().syncPublisher(TOPIC).onActiveProjectChanged(p);
     }
 
+    /**
+     * 创建并激活一个新项目。
+     * @param name 项目名称
+     * @param platform 目标平台
+     * @return 创建并激活的项目实例
+     */
     public @NotNull ZaFridaFridaProject createAndActivate(@NotNull String name, @NotNull ZaFridaPlatform platform) {
+        // 处理掉名称中的非法字符
         String safeName = sanitizeName(name);
+        // 获取IntelliJ/PyCharm IDE使用该插件的项目目录
         VirtualFile base = project.getBaseDir();
+        // 确保项目目录存在(这个几乎不可能为空)
         if (base == null) throw new IllegalStateException("No project base dir");
 
+        // 构造相对目录路径
         String rootFolder = platform.rootFolderName();
         String relDir = rootFolder + "/" + safeName;
 
@@ -138,7 +192,7 @@ public final class ZaFridaProjectManager {
                 throw new RuntimeException(e);
             }
 
-            // 1) project config
+            // 1) project config(项目的一些默认配置)
             ZaFridaProjectConfig cfg = new ZaFridaProjectConfig();
             cfg.name = safeName;
             cfg.platform = platform;
@@ -178,6 +232,11 @@ public final class ZaFridaProjectManager {
     }
 
 
+    /**
+     * 加载指定项目的配置。
+     * @param p 目标项目
+     * @return NotNull ZaFridaProjectConfig 项目配置实例
+     */
     public @NotNull ZaFridaProjectConfig loadProjectConfig(@NotNull ZaFridaFridaProject p) {
         VirtualFile dir = resolveProjectDir(p);
         if (dir == null) {
@@ -192,6 +251,11 @@ public final class ZaFridaProjectManager {
         return c;
     }
 
+    /**
+     * 更新指定项目的配置。
+     * @param p 目标项目
+     * @param mutator 用于修改配置的函数
+     */
     public void updateProjectConfig(@NotNull ZaFridaFridaProject p, @NotNull Consumer<ZaFridaProjectConfig> mutator) {
         VirtualFile dir = resolveProjectDir(p);
         if (dir == null) return;
@@ -202,6 +266,11 @@ public final class ZaFridaProjectManager {
         storage.saveProjectConfig(project, dir, cfg);
     }
 
+    /**
+    * 解析项目的实际目录。
+    * @param p 目标项目
+    * @return 对应的虚拟文件目录，若不存在则返回 null
+    */
     public @Nullable VirtualFile resolveProjectDir(@NotNull ZaFridaFridaProject p) {
         VirtualFile base = project.getBaseDir();
         if (base == null) return null;
@@ -211,12 +280,24 @@ public final class ZaFridaProjectManager {
         return out[0];
     }
 
+    /**
+     * 将文件路径转换为项目相对路径。
+     * @param p 目标项目
+     * @param file 目标文件
+     * @return 相对路径字符串，若无法解析则返回 null
+     */
     public @Nullable String toProjectRelativePath(@NotNull ZaFridaFridaProject p, @NotNull VirtualFile file) {
         VirtualFile dir = resolveProjectDir(p);
         if (dir == null) return null;
         return storage.relativize(dir, file);
     }
 
+    /** 创建文件（无写操作版本）。
+     * 这个版本用于在已有写操作的上下文中调用，避免嵌套写操作。
+     * @param dir 目标目录
+     * @param name 文件名
+     * @param content 文件内容
+     */
     private static void ensureFileNoWriteAction(@NotNull VirtualFile dir, @NotNull String name, @NotNull String content) {
         try {
             VirtualFile f = dir.findChild(name);
@@ -270,6 +351,11 @@ public final class ZaFridaProjectManager {
 
     // ---------------- utils ----------------
 
+    /**
+     * 清理项目名称，移除非法文件名字符。
+     * @param name
+     * @return String
+     */
     private static String sanitizeName(String name) {
         String s = name.trim();
         s = s.replaceAll("[\\\\/:*?\"<>|]", "_");
@@ -277,6 +363,12 @@ public final class ZaFridaProjectManager {
         return s;
     }
 
+    /**
+     * 提取目标标识的末段作为脚本命名参考。
+     * 例如：com.example.app -> app
+     * @param target 目标标识
+     * @return 末段字符串
+     */
     private static String targetLeaf(String target) {
         String t = target.trim();
         int idx = t.lastIndexOf('.');
@@ -284,6 +376,12 @@ public final class ZaFridaProjectManager {
         return t;
     }
 
+    /** 创建文件（有写操作版本）。
+     * 这个版本会在内部执行写操作。
+     * @param dir 目标目录
+     * @param name 文件名
+     * @param content 文件内容
+     */
     private static void ensureFile(VirtualFile dir, String name, String content) {
         try {
             VirtualFile f = dir.findChild(name);
@@ -294,6 +392,10 @@ public final class ZaFridaProjectManager {
         } catch (Throwable ignore) {}
     }
 
+    /** 将目录转换为相对于项目根目录的路径。
+     * @param dir 目标目录
+     * @return 相对路径字符串，若无法解析则返回 null
+     */
     private @Nullable String toRelativeDir(@NotNull VirtualFile dir) {
         VirtualFile base = project.getBaseDir();
         if (base == null) return null;
@@ -303,6 +405,11 @@ public final class ZaFridaProjectManager {
         return relRef[0];
     }
 
+    /** 根据相对目录推断平台类型。
+     * @param relativeDir 相对目录
+     * @param fallback 回退平台
+     * @return 推断的平台类型
+     */
     private static @NotNull ZaFridaPlatform inferPlatform(@NotNull String relativeDir, @NotNull ZaFridaPlatform fallback) {
         String rel = relativeDir.replace('\\', '/');
         if (rel.equals("ios") || rel.startsWith("ios/")) return ZaFridaPlatform.IOS;
@@ -310,6 +417,7 @@ public final class ZaFridaProjectManager {
         return fallback;
     }
 
+    /** 默认 Agent 脚本骨架。 */
     private static String defaultAgentSkeleton() {
         return """
                 // ZAFrida default agent

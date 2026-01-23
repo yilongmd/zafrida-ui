@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 /**
  * [Action] 从文件夹加载现有项目。
+ * [IntelliJ/PyCharm ProjectView右键菜单]
  * <p>
  * <strong>场景：</strong>
  * 当用户手动复制了一个项目文件夹，或者在另一台机器上打开 IDE 时，
@@ -30,6 +31,12 @@ import java.util.Comparator;
  */
 public final class LoadZaFridaProjectFromFolderAction extends AnAction {
 
+    /**
+     * 菜单可用性更新逻辑
+     * 通过 IDE_VIEW 获取（ProjectView 右键菜单最可靠的方式）
+     * 使用过其他的方式, 发现很多时候获取不到正确的 VirtualFile
+     * @param e
+     */
     @Override
     public void update(AnActionEvent e) {
         VirtualFile vf = null;
@@ -59,6 +66,10 @@ public final class LoadZaFridaProjectFromFolderAction extends AnAction {
         e.getPresentation().setEnabled(isDir);
     }
 
+    /**
+     * 菜单执行逻辑
+     * @param e
+     */
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();

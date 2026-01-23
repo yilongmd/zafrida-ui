@@ -24,12 +24,23 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
 
+/**
+ * [IntelliJ/PyCharm CodeView右键菜单] Attach Frida JS右键菜单。
+ * <p>
+ * 用户打开一个 JavaScript 脚本文件时，可以通过右键菜单选择 "Attach Frida JS" 操作后Run Panel会自动切换到该脚本所在的 Frida 项目，
+ * 并使用该脚本进行附加操作。
+ */
 public final class AttachFridaJsAction extends AnAction {
 
+    /** 构造函数，设置菜单图标 */
     public AttachFridaJsAction() {
         getTemplatePresentation().setIcon(ZaFridaIcons.RUN_FRIDA);
     }
 
+    /**
+     * 菜单可用性更新逻辑。
+     * @param e
+     */
     @Override
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -39,19 +50,27 @@ public final class AttachFridaJsAction extends AnAction {
         e.getPresentation().setEnabled(enabled);
     }
 
+    /**
+     * 菜单执行逻辑。
+     * @param e
+     */
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
+        // 获取当前项目, 也就是IntelliJ/PyCharm中的Project
         Project project = e.getProject();
         if (project == null) return;
 
+        // 解析当前脚本文件
         VirtualFile script = resolveScriptFile(e);
         if (script == null || script.isDirectory() || !isJsFile(script)) return;
 
+        // 保存当前编辑器内容
         Editor editor = e.getData(CommonDataKeys.EDITOR);
         if (editor != null) {
             FileDocumentManager.getInstance().saveDocument(editor.getDocument());
         }
 
+        // 查找脚本对应的Frida项目
         ZaFridaProjectManager pm = project.getService(ZaFridaProjectManager.class);
         ZaFridaFridaProject previous = pm.getActiveProject();
         VirtualFile projectDir = findFridaProjectDir(project, script);
@@ -60,6 +79,7 @@ public final class AttachFridaJsAction extends AnAction {
             return;
         }
 
+        // 切换到对应的Frida项目
         ZaFridaFridaProject target = pm.findProjectByDir(projectDir);
         if (target == null) {
             target = pm.registerExistingProject(projectDir, true);
@@ -69,17 +89,20 @@ public final class AttachFridaJsAction extends AnAction {
             }
         }
 
+        // 判断是否是切换项目
         boolean switching = previous == null || !previous.equals(target);
         if (!target.equals(pm.getActiveProject())) {
             pm.setActiveProject(target);
         }
 
+        // 获取toolWindow
         ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("ZAFrida");
         if (toolWindow == null) {
             ZaFridaNotifier.warn(project, "ZAFrida", "ZAFrida tool window not available");
             return;
         }
 
+        // 获取Run Panel并执行附加操作
         Runnable runTask = () -> {
             ZaFridaRunPanel runPanel = findRunPanel(toolWindow);
             if (runPanel == null) {
@@ -94,14 +117,25 @@ public final class AttachFridaJsAction extends AnAction {
             }
         };
 
+        // 使用ToolWindow激活runTask
         toolWindow.activate(runTask);
     }
 
+    /**
+     * 判断是否是JavaScript文件。
+     * @param file
+     * @return boolean
+     */
     private static boolean isJsFile(@NotNull VirtualFile file) {
         String ext = file.getExtension();
         return ext != null && ext.equalsIgnoreCase("js");
     }
 
+    /**
+     * 解析当前脚本文件。
+     * @param e
+     * @return Nullable VirtualFile
+     */
     private static @Nullable VirtualFile resolveScriptFile(@NotNull AnActionEvent e) {
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
         if (file != null) return file;
@@ -114,6 +148,12 @@ public final class AttachFridaJsAction extends AnAction {
         return null;
     }
 
+    /**
+     * 查找指定文件所属的Frida项目目录。
+     * @param project
+     * @param file
+     * @return Nullable VirtualFile
+     */
     private static @Nullable VirtualFile findFridaProjectDir(@NotNull Project project, @NotNull VirtualFile file) {
         VirtualFile base = project.getBaseDir();
         if (base == null) return null;
@@ -130,6 +170,11 @@ public final class AttachFridaJsAction extends AnAction {
         return null;
     }
 
+    /**
+     * 在ToolWindow中查找ZaFridaRunPanel实例。
+     * @param toolWindow
+     * @return Nullable ZaFridaRunPanel
+     */
     private static @Nullable ZaFridaRunPanel findRunPanel(@NotNull ToolWindow toolWindow) {
         Content[] contents = toolWindow.getContentManager().getContents();
         for (Content content : contents) {

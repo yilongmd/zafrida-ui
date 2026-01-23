@@ -22,12 +22,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class SessionLogWriter {
 
+    /** 日志文件路径 */
     private final @NotNull Path file;
+    /** 运行状态标志 */
     private final AtomicBoolean running = new AtomicBoolean(true);
+    /** 日志消息队列 */
     private final LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>();
+    /** 日志文件写入器 */
     private final BufferedWriter writer;
+    /** 后台日志写入线程 */
     private final Thread worker;
 
+    /**
+     * 构造函数
+     * @param file
+     */
     public SessionLogWriter(@NotNull Path file) throws Exception {
         this.file = file;
         this.writer = Files.newBufferedWriter(
@@ -41,6 +50,9 @@ public final class SessionLogWriter {
         this.worker.start();
     }
 
+    /**
+     *  后台日志写入循环
+     */
     private void runLoop() {
         try {
             while (running.get() || !queue.isEmpty()) {
@@ -70,11 +82,18 @@ public final class SessionLogWriter {
         }
     }
 
+    /**
+     * 追加日志文本到队列
+     * @param text 日志文本
+     */
     public void append(@NotNull String text) {
         if (!running.get()) return;
         queue.offer(text);
     }
 
+    /**
+     * 关闭日志写入器
+     */
     public void close() {
         running.set(false);
         try {
@@ -83,6 +102,10 @@ public final class SessionLogWriter {
         }
     }
 
+    /**
+     * 获取日志文件路径
+     * @return 日志文件路径
+     */
     public @NotNull Path getFile() {
         return file;
     }

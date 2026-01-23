@@ -35,22 +35,36 @@ import java.util.List;
  */
 public class ZaFridaProjectConfigurable implements Configurable {
 
+    /** 项目 */
     private final @NotNull Project project;
+    /** 项目设置实例 */
     private final @NotNull ZaFridaProjectSettings settings;
+    /** 全局设置实例 */
     private final @NotNull ZaFridaGlobalSettings globalSettings;
 
+    /** 插件主面板 */
     private JPanel mainPanel;
+    /** 包名文本框 */
     private JBTextField packageNameField;
+    /** 包名下拉框 */
     private ComboBox<String> packageComboBox;
+    /** 刷新包名按钮 */
     private JButton refreshPackagesButton;
+    /** 保存包名按钮 */
     private JButton savePackageButton;
 
+    /** 设备连接模式下拉框 */
     private ComboBox<DeviceConnectionMode> connectionModeCombo;
+    /** 远程主机文本框 */
     private JBTextField remoteHostField;
+    /** 远程端口文本框 */
     private JBTextField remotePortField;
+    /** 额外参数文本框 */
     private JBTextField additionalArgsField;
+    /** Spawn 模式复选框 */
     private JBCheckBox spawnModeCheckBox;
 
+    /** 命令预览标签 */
     private JBLabel commandPreviewLabel;
 
     public ZaFridaProjectConfigurable(@NotNull Project project) {

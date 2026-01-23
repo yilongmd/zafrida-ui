@@ -12,16 +12,27 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class AttachNameRunMode implements FridaRunMode {
 
+    /** 进程名称 */
     private final @NotNull String name;
 
+    /**
+     *  AttachNameRunMode 构造函数用于初始化进程名称。
+     * @param name
+     */
     public AttachNameRunMode(@NotNull String name) {
         this.name = name;
     }
 
+    /**
+     * 获取进程名称。
+     */
     public @NotNull String getName() {
         return name;
     }
 
+    /**
+     * 返回该运行模式的字符串表示形式，格式为 "Attach(-N &lt;name&gt;)"。
+     */
     @Override
     public String toString() {
         return "Attach(-N " + name + ")";
