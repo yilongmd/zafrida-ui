@@ -118,11 +118,11 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         doctorBtn.setIcon(AllIcons.General.InspectionsOK);
         doctorBtn.addActionListener(e -> runPanel.openEnvironmentDoctorDialog());
 
-        JButton languageToggleBtn = new JButton(
+        /*JButton languageToggleBtn = new JButton(
                 IconLoader.getIcon("/META-INF/icons/lang-toggle.svg", ZaFridaMainToolWindow.class)
         );
         languageToggleBtn.setToolTipText("中文 / English");
-        languageToggleBtn.addActionListener(e -> runPanel.showLanguageToggleMessage());
+        languageToggleBtn.addActionListener(e -> runPanel.showLanguageToggleMessage());*/
 
         projectRow.add(newProjectBtn);
         projectRow.add(projectSettingsBtn);
