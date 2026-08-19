@@ -1,3 +1,5 @@
+
+
 中文 | [English](./README.en-US.md)
 
 ![ZAFrida UI](doc/logo.svg "ZAFrida UI Logo")
@@ -42,7 +44,7 @@ ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，�
 * 选择目标进程或包名。
 * 点击 **Run**。
 6.  **使用模板**: 切换到 `Templates` 标签页，勾选你需要的 Hook 功能（如 "SSL Pinning Bypass"），代码会自动注入到你的脚本中。
-7.  **Skills 自动化（可选）**: 默认关闭。前往 `Settings/Preferences -> ZAFrida -> Skills HTTP API`，勾选 `Enable Skills` 后可自动启动本地 API（也可手动 `Start/Stop`），CLI 与模板位置：
+7.  **Skills 自动化（可选）**: 默认关闭。前往 `Settings/Preferences -> ZAFrida -> Skills HTTP API`，勾选 `Enable Skills` 后可自动启动本地 API（默认 `http://127.0.0.1:17839/zafrida/api/v1`，也可手动 `Start/Stop`），CLI 与模板位置：
     * `skills-cli/zafrida_skill_cli.py`
     * `skills-template/zafrida-http-control/`
 
