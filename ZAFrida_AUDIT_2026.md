@@ -206,15 +206,14 @@ MCP server 不承载 ZAFrida 独有能力，只是手写 27 个 schema，再同�
 3. 额外依赖 `mcp` Python 包，安装和版本问题与插件本身无关。
 4. MCP tool 描述只能列原子操作，没有 Skill 中的设备恢复、日志游标和副作用重试规则。
 
-### 建议
+### 决策与结果
 
-- `已处理` 现在标记为 `legacy / feature-frozen`，不再把新能力同步到手写 MCP schema。
-- 不在本轮直接删除：项目已公开使用，Cursor/Windsurf 等 MCP-only 客户端可能仍有用户。
-- 经过一个明确兼容窗口后，在下一次破坏性版本单独删除 `mcp-server/`、requirements 和注册文档。
-- HTTP API + Skill CLI 保持稳定，删除 MCP 不影响核心自动化。
-- 如果社区确认 MCP 仍有真实需求，不恢复手写模式；应从统一 schema/OpenAPI 自动生成，并使用真正 async client 与 contract tests。
+- `已完成` 删除 `mcp-server/`、独立 requirements 和注册文档，不再发布或维护 MCP 适配器。
+- 本地 HTTP API、Skill CLI 与 Skill 模板继续作为唯一 AI 自动化入口。
+- 已注册旧 MCP server 的客户端需要移除对应配置，改为调用 Skill/CLI。
+- 如果未来确认存在必须支持 MCP-only 客户端的真实需求，不恢复手写路由；应从统一 schema/OpenAPI 自动生成，并使用真正 async client 与 contract tests。
 
-结论：对具备本地 shell/Skill 能力的 AI，Skill + CLI 已足够且更可靠；MCP 只对 MCP-only 客户端有保留价值。
+结论：现阶段 Skill + CLI + 本地 HTTP API 已覆盖自动化需求，删除 MCP 可以消除重复协议层及其依赖、阻塞和能力漂移风险。
 
 ## 8. 构建、发布和测试缺口
 
@@ -223,7 +222,7 @@ MCP server 不承载 ZAFrida 独有能力，只是手写 27 个 schema，再同�
 - Java 21：`./gradlew test`，当前 21 个测试、0 failure。
 - `-Xlint:deprecation` / `-Xlint:unchecked`：生产 Java 无警告。
 - `buildPlugin`、`verifyPluginProjectConfiguration`、`verifyPluginStructure`：通过；产物为 `build/distributions/zafrida-ui-0.3.7.zip`。
-- Python：Skill CLI、兼容 launcher 与 legacy MCP 通过语法编译；CLI 通过 help、不可达错误和 `retryable=false` 不重试 smoke。
+- Python：Skill CLI 与兼容 launcher 通过语法编译；CLI 通过 help、不可达错误和 `retryable=false` 不重试 smoke。
 - Skill：使用 `skill-creator` 的 `quick_validate.py` 验证通过。
 - 44 个内置 JS 模板通过 `node --check`。
 - Frida TS fixture 分别通过本机 16.1.4/12.3.0 与 17.9.1/14.8.2 的 `frida-compile`。
@@ -247,4 +246,3 @@ MCP server 不承载 ZAFrida 独有能力，只是手写 27 个 schema，再同�
 3. **UI 迭代**：单一 session toolbar、状态 badge、环境 badge、日志历史/follow、响应式 Templates、持久布局。
 4. **AI 扩展**：events/long-poll、operation API、diagnostic bundle、模板/trace log/compatibility endpoints、环境 profile。
 5. **TypeScript 产品化**：安全 scaffold、依赖状态、compiler diagnostics、Frida 17 quick-fix。
-6. **MCP 删除阶段**：兼容窗口结束后移除 legacy adapter；如必须保留则改为 schema 生成的独立适配器。
