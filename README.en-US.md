@@ -12,6 +12,13 @@ Current Version: 0.3.7
 [![](https://img.shields.io/badge/Platform-IntelliJ-brightgreen.svg)](https://plugins.jetbrains.com/)
 [![GitHub stars](https://img.shields.io/github/stars/yilongmd/zafrida-ui.svg?style=social&label=Stars)](https://github.com/yilongmd/zafrida-ui)
 
+## What's New in 0.3.7
+
+- Each ZAFrida Project can select or share its own Python/Frida environment while defaulting to the current PyCharm project interpreter; local venv, Conda, uv, Poetry, Pipenv, and Hatch environments are supported.
+- The Session UI and Project Settings now show complete plugin, Python, and Frida version details, with a responsive draggable log panel and clearer session states.
+- Full `.js` / `.ts`, Frida 16/17, multi-project environment, and USB/Remote/Gadget workflow support.
+- The local HTTP API, CLI, and Skill now provide stronger device recovery, session waiting, and incremental log workflows; the redundant MCP adapter has been removed.
+
 
 Project Introduction
 -----------------------------------

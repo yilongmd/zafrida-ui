@@ -12,6 +12,13 @@ ZAFrida UI - PyCharm Frida Plugin
 [![](https://img.shields.io/badge/Platform-IntelliJ-brightgreen.svg)](https://plugins.jetbrains.com/)
 [![GitHub stars](https://img.shields.io/github/stars/yilongmd/zafrida-ui.svg?style=social&label=Stars)](https://github.com/yilongmd/zafrida-ui)
 
+## 0.3.7 主要更新
+
+- 每个 ZAFrida Project 可独立选择或共享 Python/Frida 环境，默认使用当前 PyCharm 项目解释器，支持 venv、Conda、uv、Poetry、Pipenv、Hatch 等本地环境。
+- 重新设计 Session UI 与 Project Settings，完整显示插件、Python 和 Frida 版本信息，并优化自适应、可拖动日志面板与会话状态。
+- 完整支持 `.js` / `.ts`、Frida 16/17、多项目环境切换，以及 USB、Remote、Gadget 三种连接流程。
+- 强化本地 HTTP API、CLI 与中文 Skill 的设备恢复、会话等待和增量日志能力；移除重复且不稳定的 MCP 适配层。
+
 
 项目介绍
 -----------------------------------
