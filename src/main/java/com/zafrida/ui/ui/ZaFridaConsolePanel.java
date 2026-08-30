@@ -36,9 +36,11 @@ import java.io.File;
 
 public final class ZaFridaConsolePanel extends JPanel implements Disposable {
 
+    private static final String SESSION_LOG_NOT_CREATED = "Session log: not created";
+
     private final @NotNull Project project;
 
-    private final JLabel logFileLabel = new JLabel("Log: (not started)");
+    private final JLabel logFileLabel = new JLabel(SESSION_LOG_NOT_CREATED);
     private final JButton locateLogFileBtn = new JButton("");
     private final JButton openLogFileBtn = new JButton("");
     private final JButton openLogFileInVsCodeBtn = new JButton("");
@@ -86,8 +88,8 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         this.lastLogFilePath = logFilePath;
 
         if (ZaStrUtil.isBlank(logFilePath)) {
-            logFileLabel.setText("Log: (not started)");
-            logFileLabel.setToolTipText("Log: (not started)");
+            logFileLabel.setText(SESSION_LOG_NOT_CREATED);
+            logFileLabel.setToolTipText(SESSION_LOG_NOT_CREATED);
             locateLogFileBtn.setEnabled(false);
             openLogFileBtn.setEnabled(false);
             openLogFileInVsCodeBtn.setEnabled(false);
@@ -95,7 +97,15 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         }
 
         String trimmed = logFilePath.trim();
-        logFileLabel.setText(String.format("Log: %s", trimmed));
+        if (trimmed.startsWith("(")) {
+            logFileLabel.setText("Session log: unavailable");
+        } else {
+            String fileName = new File(trimmed).getName();
+            if (fileName.isEmpty()) {
+                fileName = trimmed;
+            }
+            logFileLabel.setText(String.format("Session log: %s", fileName));
+        }
         logFileLabel.setToolTipText(trimmed);
 
         boolean enabled = !trimmed.startsWith("(");

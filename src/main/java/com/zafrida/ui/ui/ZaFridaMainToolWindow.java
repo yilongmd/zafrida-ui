@@ -50,7 +50,7 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         tabbedPane = new JBTabbedPane();
         tabbedPane.setTabComponentInsets(JBUI.emptyInsets());
 
-        tabbedPane.addTab("Run", runPanel);
+        tabbedPane.addTab("Session", runPanel);
         tabbedPane.addTab("Templates", templatePanel);
         tabbedPane.addTab("Tools", toolsPanel);
 
@@ -169,40 +169,7 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         projectRow.add(globalSettingsBtn);
         projectRow.add(doctorBtn);
 
-        JPanel runRow = new JPanel(new GridLayout(1, 4, JBUI.scale(6), 0));
-        JButton runBtn = new JButton("Run");
-        runBtn.setIcon(AllIcons.Actions.Execute);
-        runBtn.addActionListener(e -> runPanel.triggerRun());
-
-        JButton stopBtn = new JButton("Stop");
-        stopBtn.setIcon(AllIcons.Actions.Suspend);
-        stopBtn.addActionListener(e -> runPanel.triggerStop());
-
-        JButton forceStopBtn = new JButton("Stop App");
-        forceStopBtn.setIcon(AllIcons.Actions.Cancel);
-        forceStopBtn.setToolTipText("Force Stop App (adb force-stop)");
-        forceStopBtn.addActionListener(e -> runPanel.triggerForceStop());
-
-        JButton openAppBtn = new JButton("Open App");
-        openAppBtn.setIcon(AllIcons.Actions.Execute);
-        openAppBtn.setToolTipText("Open App (adb)");
-        openAppBtn.addActionListener(e -> runPanel.triggerOpenApp());
-
-        tuneHeaderButton(runBtn);
-        tuneHeaderButton(stopBtn);
-        tuneHeaderButton(forceStopBtn);
-        tuneHeaderButton(openAppBtn);
-
-        runPanel.bindExternalRunStopButtons(runBtn, stopBtn);
-
-        runRow.add(runBtn);
-        runRow.add(stopBtn);
-        runRow.add(forceStopBtn);
-        runRow.add(openAppBtn);
-
         header.add(projectRow);
-        header.add(Box.createVerticalStrut(JBUI.scale(4)));
-        header.add(runRow);
 
         return header;
     }

@@ -69,6 +69,8 @@ python3 <skill-dir>/scripts/zafrida_api.py attach-script-set --path /abs/path/at
 python3 <skill-dir>/scripts/zafrida_api.py extra-set --value=--realm=emulated
 ```
 
+The primary script is always loaded first. Frida CLI accepts repeated `-l/--load` options, so an advanced workflow may add one or more extra scripts through `extra-set`, for example `--value='-l /abs/path/extra.js -l /abs/path/trace.js'`. Preserve load order and quote paths containing spaces. Prefer a single entry script with imports when scripts share state or have ordering dependencies.
+
 ## Session lifecycle
 
 ```bash

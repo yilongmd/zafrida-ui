@@ -2,20 +2,19 @@ package com.zafrida.ui.ui;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.project.Project;
 import com.zafrida.ui.adb.AdbService;
 import com.zafrida.ui.api.ZaFridaLocalHttpApiService;
 import com.zafrida.ui.diagnostics.EnvironmentDoctorDialog;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.extensions.PluginId;
+import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.JBUI;
 import com.zafrida.ui.frida.*;
@@ -65,9 +64,9 @@ import java.util.function.Supplier;
 public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaRunPanel.class);
-    private static final String PLUGIN_ID = "com.zafrida.ui";
     private static final String USB_DEVICE_TYPE = "usb";
     private static final String ADB_SHELL_COMMAND = "adb shell";
+    private static final String ADVANCED_EXPANDED_KEY = "zafrida.session.advanced.expanded";
 
     private final @NotNull Project project;
     private final @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel;
@@ -94,6 +93,9 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final JBTextField targetField = new JBTextField();
 
     private final JBTextField extraArgsField = new JBTextField();
+    private final ActionLink advancedLink = new ActionLink("Advanced ▸");
+    private final JLabel extraArgsLabel = new JLabel("Extra Args");
+    private final JPanel extraArgsRow;
 
     private final JButton runBtn = new JButton("Run");
     private final JButton stopBtn = new JButton("Stop Run");
@@ -102,7 +104,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final JButton forceStopBtn = new JButton("");
     private final JButton openAppBtn = new JButton("");
 
-    private final JLabel versionValueLabel = new JLabel();
+    private final JLabel fridaVersionLabel = new JLabel("Frida —");
 
     private @Nullable VirtualFile runScriptFile;
     private @Nullable VirtualFile attachScriptFile;
@@ -126,11 +128,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private boolean updatingFridaProjectSelector = false;
     private boolean updatingDeviceCombo = false;
     private boolean updatingRunFields = false;
+    private boolean advancedExpanded;
     private int activeProjectUiGeneration = 0;
     private int deviceReloadGeneration = 0;
     private boolean disposed;
-    private @Nullable JButton externalRunBtn;
-    private @Nullable JButton externalStopBtn;
     private final EnumSet<ZaFridaSessionType> stoppingSessions = EnumSet.noneOf(ZaFridaSessionType.class);
 
 
@@ -149,6 +150,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         this.adbService = ApplicationManager.getApplication().getService(AdbService.class);
         this.fridaProjectManager = project.getService(ZaFridaProjectManager.class);
         this.localHttpApiService = project.getService(ZaFridaLocalHttpApiService.class);
+        this.extraArgsRow = buildExtraRow();
 
 
         JPanel form = new JPanel(new GridBagLayout());
@@ -159,10 +161,15 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         row = addRow(form, row, new JLabel("Run Script"), buildRunScriptRow());
         row = addRow(form, row, new JLabel("Attach Script"), buildAttachScriptRow());
         row = addRow(form, row, new JLabel("Target"), buildTargetRow());
-        row = addRow(form, row, new JLabel("Extra"), buildExtraRow());
+        row = addRow(form, row, new JLabel(""), buildAdvancedRow());
+        row = addRow(form, row, extraArgsLabel, extraArgsRow);
         row = addRow(form, row, new JLabel(""), buildButtonsRow());
 
         add(form, BorderLayout.NORTH);
+
+        boolean storedAdvancedExpanded = PropertiesComponent.getInstance(project)
+                .getBoolean(ADVANCED_EXPANDED_KEY, false);
+        setAdvancedExpanded(storedAdvancedExpanded, false);
 
         initUiState();
         bindActions();
@@ -179,7 +186,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         runScriptField.setHorizontalAlignment(JTextField.TRAILING);
         attachScriptField.setHorizontalAlignment(JTextField.TRAILING);
 
-        extraArgsField.setToolTipText("Extra args passed to frida, e.g. --realm=emulated");
+        extraArgsField.getEmptyText().setText("--realm=emulated or -l extra.js");
+        extraArgsField.setToolTipText("Extra Frida CLI args, e.g. --realm=emulated or -l path/to/extra.js");
+        advancedLink.setToolTipText("Show or hide advanced Frida options");
+        advancedLink.getAccessibleContext().setAccessibleName("Toggle advanced Frida options");
         projectTypeIcon.setToolTipText("Project platform");
 
         targetField.setToolTipText("Spawn/Attach uses package name");
@@ -208,26 +218,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         forceStopBtn.setToolTipText("Force Stop App (adb force-stop)");
         openAppBtn.setIcon(AllIcons.Actions.Execute);
         openAppBtn.setToolTipText("Open App (adb)");
-        initVersionInfo();
+        fridaVersionLabel.setToolTipText("Frida version has not been detected for the current Python environment");
         updateRunningState();
-    }
-
-    private void initVersionInfo() {
-        String version = resolveCurrentPluginVersion();
-        if (version == null) {
-            versionValueLabel.setText("ZAFrida");
-        } else {
-            versionValueLabel.setText(String.format("v%s", version));
-        }
-        versionValueLabel.setToolTipText("Installed ZAFrida plugin version; IDE updates are managed by JetBrains Plugins settings");
-    }
-
-    private @Nullable String resolveCurrentPluginVersion() {
-        IdeaPluginDescriptor descriptor = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID));
-        if (descriptor == null) {
-            return null;
-        }
-        return descriptor.getVersion();
     }
 
     private JPanel buildFridaProjectRow() {
@@ -235,7 +227,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         JPanel metadata = new JPanel(new BorderLayout());
         JPanel metadataContent = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
         metadataContent.add(projectTypeIcon);
-        metadataContent.add(versionValueLabel);
+        metadataContent.add(fridaVersionLabel);
         metadata.add(metadataContent, BorderLayout.SOUTH);
         row.add(fridaProjectSelector, BorderLayout.CENTER);
         row.add(metadata, BorderLayout.EAST);
@@ -271,6 +263,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         stopAttachBtn.addActionListener(e -> stopAttachSession());
         forceStopBtn.addActionListener(e -> forceStopApp());
         openAppBtn.addActionListener(e -> openApp());
+        advancedLink.addActionListener(event -> setAdvancedExpanded(!advancedExpanded, true));
 
         deviceCombo.addActionListener(e -> {
             if (updatingDeviceCombo) {
@@ -356,6 +349,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         int generation = ++activeProjectUiGeneration;
         fridaCli.clearDetectedProjectVersion(project);
         lastPrintedPythonEnvironment = null;
+        setFridaVersionLabel("Frida …", "Detecting Frida version for the current Python environment");
         updatingFridaProjectSelector = true;
         try {
             fridaProjectSelector.setSelectedItem(active);
@@ -371,6 +365,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         templatePanel.setCurrentPlatform(platform);
 
         if (active == null) {
+            setFridaVersionLabel("Frida —", "No active ZAFrida project");
             // 保留自由脚本模式下的临时输入。
             targetField.setEnabled(true);
             targetField.setToolTipText(null);
@@ -449,6 +444,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     private void persistExtraArgs() {
+        updateAdvancedLinkText();
         if (updatingRunFields) {
             return;
         }
@@ -681,12 +677,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         openApp();
     }
 
-    public void bindExternalRunStopButtons(@NotNull JButton runButton, @NotNull JButton stopButton) {
-        this.externalRunBtn = runButton;
-        this.externalStopBtn = stopButton;
-        syncExternalRunStopButtons();
-    }
-
     public void refreshDevicesForApi() {
         reloadDevicesAsync();
     }
@@ -884,9 +874,39 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     private JPanel buildExtraRow() {
-        JLabel argsLabel = new JLabel("(Args)");
-        argsLabel.setBorder(JBUI.Borders.emptyLeft(6));
-        return buildFlexibleRow(extraArgsField, argsLabel);
+        JPanel row = new JPanel(new BorderLayout());
+        row.add(extraArgsField, BorderLayout.CENTER);
+        return row;
+    }
+
+    private JPanel buildAdvancedRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        row.add(advancedLink);
+        return row;
+    }
+
+    private void setAdvancedExpanded(boolean expanded, boolean persist) {
+        advancedExpanded = expanded;
+        extraArgsLabel.setVisible(expanded);
+        extraArgsRow.setVisible(expanded);
+        updateAdvancedLinkText();
+        if (persist) {
+            PropertiesComponent.getInstance(project).setValue(ADVANCED_EXPANDED_KEY, expanded, false);
+        }
+        revalidate();
+        repaint();
+    }
+
+    private void updateAdvancedLinkText() {
+        if (advancedExpanded) {
+            advancedLink.setText("Advanced ▾");
+            return;
+        }
+        if (ZaStrUtil.isNotBlank(extraArgsField.getText())) {
+            advancedLink.setText("Advanced ▸ · Extra args set");
+            return;
+        }
+        advancedLink.setText("Advanced ▸");
     }
 
     private JPanel buildButtonsRow() {
@@ -1010,11 +1030,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
 
-    private synchronized void printToolchainInfoIfChanged() {
+    private synchronized void printToolchainInfoIfChanged(int generation) {
         PythonEnvInfo env;
         try {
             env = ProjectPythonEnvResolver.resolve(project);
         } catch (PythonEnvResolutionException e) {
+            updateFridaVersionLabelAsync(generation, "Frida —", e.getMessage());
             String errorKey = String.format("error:%s", e.getMessage());
             if (!errorKey.equals(lastPrintedPythonEnvironment)) {
                 lastPrintedPythonEnvironment = errorKey;
@@ -1023,6 +1044,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             return;
         }
         if (env == null) {
+            updateFridaVersionLabelAsync(generation, "Frida —", "Python environment could not be resolved");
             if (!"none".equals(lastPrintedPythonEnvironment)) {
                 lastPrintedPythonEnvironment = "none";
                 runConsolePanel.warn("[ZAFrida] Python environment not detected. Using IDE/system PATH for frida-tools.");
@@ -1063,10 +1085,32 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         try {
             String version = fridaCli.detectProjectFridaVersion(project);
             runConsolePanel.info(String.format("[ZAFrida] Frida version: %s", version));
+            updateFridaVersionLabelAsync(
+                    generation,
+                    String.format("Frida %s", version),
+                    String.format("Frida %s in %s", version, env.getEnvRoot())
+            );
             lastPrintedPythonEnvironment = environmentKey;
         } catch (RuntimeException e) {
+            updateFridaVersionLabelAsync(generation, "Frida —", e.getMessage());
             runConsolePanel.warn(String.format("[ZAFrida] Frida version detection failed: %s", e.getMessage()));
         }
+    }
+
+    private void updateFridaVersionLabelAsync(int generation,
+                                              @NotNull String text,
+                                              @Nullable String tooltip) {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (disposed || project.isDisposed() || generation != deviceReloadGeneration) {
+                return;
+            }
+            setFridaVersionLabel(text, tooltip);
+        });
+    }
+
+    private void setFridaVersionLabel(@NotNull String text, @Nullable String tooltip) {
+        fridaVersionLabel.setText(text);
+        fridaVersionLabel.setToolTipText(tooltip);
     }
 
     private void reloadDevicesAsync() {
@@ -1093,7 +1137,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                printToolchainInfoIfChanged();
+                printToolchainInfoIfChanged(generation);
                 List<FridaDevice> devices = new ArrayList<>(fridaCli.listDevices(project));
                 ZaFridaSettingsService settingsService =
                         ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
@@ -1793,7 +1837,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         attachBtn.setEnabled(!attachRunning && !attachStopping);
         stopBtn.setEnabled(runRunning && !runStopping);
         stopAttachBtn.setEnabled(attachRunning && !attachStopping);
-        syncExternalRunStopButtons();
+        consoleTabsPanel.updateSessionState(ZaFridaSessionType.RUN, runRunning, runStopping);
+        consoleTabsPanel.updateSessionState(ZaFridaSessionType.ATTACH, attachRunning, attachStopping);
     }
 
     private @NotNull ZaFridaConsolePanel resolveConsoleForSessionType(@NotNull ZaFridaSessionType type) {
@@ -1801,15 +1846,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             return attachConsolePanel;
         }
         return runConsolePanel;
-    }
-
-    private void syncExternalRunStopButtons() {
-        if (externalRunBtn != null) {
-            externalRunBtn.setEnabled(runBtn.isEnabled());
-        }
-        if (externalStopBtn != null) {
-            externalStopBtn.setEnabled(stopBtn.isEnabled());
-        }
     }
 
     private void disableControls(boolean disabled) {

@@ -160,10 +160,10 @@ ZAFrida 的核心产品方向是成立的：项目上下文、设备/目标、Ru
 
 ### 主要 UI 问题
 
-1. `下一阶段` Header 与 Run tab 内存在重复 Run/Stop/ADB 控件；窄 ToolWindow 下占用明显，状态来源也更难统一。建议只保留一个全局 session toolbar，Run tab 放配置。
+1. `已处理` 删除 Header 中重复的 Run/Stop/ADB 操作行，仅保留 Session 面板内的一套操作；删除前状态已由独立 Git 提交保留，可按需恢复。
 2. `下一阶段` 设备刷新只有禁用按钮和 Console 文本，没有就地 spinner、耗时、取消或 retry 状态。
-3. `下一阶段` 当前项目的 Python/Frida 版本只写 Console；应在 Project 行显示短 badge（例如 `Frida 17.9.1 · Conda`），点击进入设置/诊断。
-4. `下一阶段` Run/Attach 没有 `starting/running/stopping/failed(exit)` 的可见状态，只靠按钮 enable 与日志。
+3. `部分处理` ToolWindow 标题显示插件版本，Project 行显示当前 Frida 版本；后续可补 Python 环境类型并支持点击进入设置/诊断。
+4. `部分处理` Run/Attach Console 标签显示 `Idle/Running/Stopping`；`Starting/Failed(exit)` 仍需会话服务保留启动阶段和终态。
 5. `下一阶段` 脚本绝对路径在窄面板中难读；应显示项目相对路径，完整路径放 tooltip，并标明 `JS/TS`。
 6. `下一阶段` Project Settings 的 Python 路径输入、三个按钮和 target 区在小窗口容易横向拥挤；建议分为 Environment / Connection / Target 三段。
 7. `下一阶段` Console 顶部同时放路径、搜索和 4 个 icon-only 按钮；应增加历史日志下拉、Follow 开关、暂停输出、复制诊断包。

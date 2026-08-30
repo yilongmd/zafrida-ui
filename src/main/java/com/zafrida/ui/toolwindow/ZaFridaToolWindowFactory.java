@@ -1,6 +1,9 @@
 package com.zafrida.ui.toolwindow;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.ide.plugins.IdeaPluginDescriptor;
+import com.intellij.ide.plugins.PluginManagerCore;
+import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
@@ -13,8 +16,11 @@ import org.jetbrains.annotations.NotNull;
 
 public final class ZaFridaToolWindowFactory implements ToolWindowFactory, DumbAware {
 
+    private static final String PLUGIN_ID = "com.zafrida.ui";
+
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
+        toolWindow.setTitle(resolveToolWindowTitle());
         ZaFridaMainToolWindow mainPanel = new ZaFridaMainToolWindow(project);
 
         Content content = ContentFactory.getInstance().createContent(mainPanel, "", false);
@@ -22,6 +28,14 @@ public final class ZaFridaToolWindowFactory implements ToolWindowFactory, DumbAw
         toolWindow.getContentManager().addContent(content);
 
         maybeShowEnvironmentDoctor(project, mainPanel);
+    }
+
+    private @NotNull String resolveToolWindowTitle() {
+        IdeaPluginDescriptor descriptor = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID));
+        if (descriptor == null || descriptor.getVersion() == null || descriptor.getVersion().isBlank()) {
+            return "ZAFrida";
+        }
+        return String.format("ZAFrida v%s", descriptor.getVersion());
     }
 
     private void maybeShowEnvironmentDoctor(@NotNull Project project, @NotNull ZaFridaMainToolWindow mainPanel) {
