@@ -104,7 +104,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private final JButton forceStopBtn = new JButton("");
     private final JButton openAppBtn = new JButton("");
 
-    private final JLabel fridaVersionLabel = new JLabel("Frida —");
+    private final JLabel fridaVersionLabel = new JLabel("—");
 
     private @Nullable VirtualFile runScriptFile;
     private @Nullable VirtualFile attachScriptFile;
@@ -349,7 +349,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         int generation = ++activeProjectUiGeneration;
         fridaCli.clearDetectedProjectVersion(project);
         lastPrintedPythonEnvironment = null;
-        setFridaVersionLabel("Frida …", "Detecting Frida version for the current Python environment");
+        setFridaVersionLabel("…", "Detecting Frida version for the current Python environment");
         updatingFridaProjectSelector = true;
         try {
             fridaProjectSelector.setSelectedItem(active);
@@ -365,7 +365,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         templatePanel.setCurrentPlatform(platform);
 
         if (active == null) {
-            setFridaVersionLabel("Frida —", "No active ZAFrida project");
+            setFridaVersionLabel("—", "No active ZAFrida project");
             // 保留自由脚本模式下的临时输入。
             targetField.setEnabled(true);
             targetField.setToolTipText(null);
@@ -1035,7 +1035,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         try {
             env = ProjectPythonEnvResolver.resolve(project);
         } catch (PythonEnvResolutionException e) {
-            updateFridaVersionLabelAsync(generation, "Frida —", e.getMessage());
+            updateFridaVersionLabelAsync(generation, "—", e.getMessage());
             String errorKey = String.format("error:%s", e.getMessage());
             if (!errorKey.equals(lastPrintedPythonEnvironment)) {
                 lastPrintedPythonEnvironment = errorKey;
@@ -1044,7 +1044,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             return;
         }
         if (env == null) {
-            updateFridaVersionLabelAsync(generation, "Frida —", "Python environment could not be resolved");
+            updateFridaVersionLabelAsync(generation, "—", "Python environment could not be resolved");
             if (!"none".equals(lastPrintedPythonEnvironment)) {
                 lastPrintedPythonEnvironment = "none";
                 runConsolePanel.warn("[ZAFrida] Python environment not detected. Using IDE/system PATH for frida-tools.");
@@ -1053,8 +1053,14 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         }
 
         String environmentKey = String.format("%s:%s", env.getSource().name(), env.getPythonHome());
+        String cachedVersion = fridaCli.getDetectedProjectVersion(project);
         if (environmentKey.equals(lastPrintedPythonEnvironment)
-                && fridaCli.hasDetectedProjectVersion(project)) {
+                && ZaStrUtil.isNotBlank(cachedVersion)) {
+            updateFridaVersionLabelAsync(
+                    generation,
+                    cachedVersion,
+                    String.format("Frida %s in %s", cachedVersion, env.getEnvRoot())
+            );
             return;
         }
         String source = "PyCharm project interpreter";
@@ -1087,12 +1093,12 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             runConsolePanel.info(String.format("[ZAFrida] Frida version: %s", version));
             updateFridaVersionLabelAsync(
                     generation,
-                    String.format("Frida %s", version),
+                    version,
                     String.format("Frida %s in %s", version, env.getEnvRoot())
             );
             lastPrintedPythonEnvironment = environmentKey;
         } catch (RuntimeException e) {
-            updateFridaVersionLabelAsync(generation, "Frida —", e.getMessage());
+            updateFridaVersionLabelAsync(generation, "—", e.getMessage());
             runConsolePanel.warn(String.format("[ZAFrida] Frida version detection failed: %s", e.getMessage()));
         }
     }

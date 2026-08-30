@@ -6,11 +6,13 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.OnePixelSplitter;
+import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.icons.AllIcons;
 import com.zafrida.ui.util.ZaFridaIcons;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -30,6 +32,9 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
     private final ZaFridaTemplatePanel templatePanel;
     private final ZaFridaToolsPanel toolsPanel;
     private final ZaFridaConsoleTabsPanel consoleTabsPanel;
+    private final JPanel pluginUpdateRow = new JPanel(new BorderLayout());
+    private final ActionLink pluginUpdateLink = new ActionLink("");
+    private @Nullable Runnable pluginUpdateAction;
     private volatile boolean disposed;
 
     public ZaFridaMainToolWindow(@NotNull Project project) {
@@ -86,6 +91,28 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
 
     public boolean isDisposedForLifecycle() {
         return disposed;
+    }
+
+    public void updatePluginUpdateIndicator(@Nullable String availableVersion,
+                                            @Nullable Runnable updateAction) {
+        if (availableVersion == null || availableVersion.isBlank()) {
+            pluginUpdateAction = null;
+            pluginUpdateLink.setText("");
+            pluginUpdateLink.setToolTipText(null);
+            pluginUpdateRow.setVisible(false);
+            revalidate();
+            repaint();
+            return;
+        }
+        pluginUpdateAction = updateAction;
+        pluginUpdateLink.setText(String.format("Update available · v%s", availableVersion));
+        pluginUpdateLink.setToolTipText(String.format(
+                "ZAFrida v%s is available; open Plugins settings",
+                availableVersion
+        ));
+        pluginUpdateRow.setVisible(true);
+        revalidate();
+        repaint();
     }
 
     private void configureInitialSplitterPosition(@NotNull OnePixelSplitter splitPane,
@@ -169,7 +196,21 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         projectRow.add(globalSettingsBtn);
         projectRow.add(doctorBtn);
 
+        pluginUpdateLink.setIcon(AllIcons.General.Warning);
+        pluginUpdateLink.setIconTextGap(JBUI.scale(4));
+        pluginUpdateLink.setFont(pluginUpdateLink.getFont().deriveFont(Font.BOLD));
+        pluginUpdateLink.addActionListener(event -> {
+            Runnable action = pluginUpdateAction;
+            if (action != null) {
+                action.run();
+            }
+        });
+        pluginUpdateRow.setBorder(JBUI.Borders.emptyTop(2));
+        pluginUpdateRow.add(pluginUpdateLink, BorderLayout.EAST);
+        pluginUpdateRow.setVisible(false);
+
         header.add(projectRow);
+        header.add(pluginUpdateRow);
 
         return header;
     }

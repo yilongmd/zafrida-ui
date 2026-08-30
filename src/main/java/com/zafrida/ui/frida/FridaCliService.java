@@ -18,6 +18,7 @@ import com.zafrida.ui.settings.ZaFridaSettingsService;
 import com.zafrida.ui.settings.ZaFridaSettingsState;
 import com.zafrida.ui.util.ZaStrUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
@@ -207,6 +208,10 @@ public final class FridaCliService {
 
     public void clearDetectedProjectVersion(@NotNull Project project) {
         detectedProjectVersions.remove(project);
+    }
+
+    public @Nullable String getDetectedProjectVersion(@NotNull Project project) {
+        return detectedProjectVersions.get(project);
     }
 
     public boolean hasDetectedProjectVersion(@NotNull Project project) {

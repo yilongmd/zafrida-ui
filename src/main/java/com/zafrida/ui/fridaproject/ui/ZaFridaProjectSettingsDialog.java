@@ -12,6 +12,9 @@ import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.TitledSeparator;
+import com.intellij.ui.components.JBTextField;
+import com.intellij.util.ui.JBUI;
 import com.zafrida.ui.frida.FridaCliService;
 import com.zafrida.ui.frida.FridaConnectionMode;
 import com.zafrida.ui.frida.FridaDevice;
@@ -19,6 +22,7 @@ import com.zafrida.ui.frida.FridaDeviceMode;
 import com.zafrida.ui.frida.FridaProcess;
 import com.zafrida.ui.frida.FridaProcessScope;
 import com.zafrida.ui.fridaproject.ZaFridaFridaProject;
+import com.zafrida.ui.fridaproject.ZaFridaPlatform;
 import com.zafrida.ui.fridaproject.ZaFridaProjectConfig;
 import com.zafrida.ui.fridaproject.ZaFridaProjectManager;
 import com.zafrida.ui.python.ProjectPythonEnvResolver;
@@ -38,16 +42,21 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JTextField;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.util.List;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import com.intellij.ui.components.JBTextField;
 
 public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
 
@@ -72,16 +81,20 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
     private final JButton refreshTargetsBtn = new JButton("Refresh");
 
     private final JLabel projectInfoLabel = new JLabel();
+    private final JLabel projectPlatformLabel = new JLabel("—");
+    private final JLabel projectDirectoryLabel = new JLabel("—");
 
     private final ComboBox<String> pythonEnvironmentCombo = new ComboBox<>();
     private final JButton browsePythonEnvironmentBtn = new JButton("Browse...");
     private final JButton useProjectPythonBtn = new JButton("Default");
     private final JButton testPythonEnvironmentBtn = new JButton("Test");
+    private final ZaFridaEnvironmentDetailsController environmentDetailsController;
 
     private @Nullable ZaFridaFridaProject activeProject;
     private @Nullable ZaFridaProjectConfig activeProjectConfig;
     private int pythonValidationGeneration;
     private int targetRefreshGeneration;
+    private boolean updatingPythonEnvironmentSelection;
 
     public ZaFridaProjectSettingsDialog(@NotNull Project project,
                                         @NotNull ZaFridaProjectManager projectManager,
@@ -94,6 +107,7 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         this.fridaCliService = fridaCliService;
         this.deviceSupplier = deviceSupplier;
         this.errorLogger = errorLogger;
+        this.environmentDetailsController = new ZaFridaEnvironmentDetailsController(project, fridaCliService);
         projectInfoLabel.setIconTextGap(6);
         refreshTargetsBtn.setIcon(AllIcons.Actions.Refresh);
         setTitle("ZAFrida Project Settings");
@@ -109,54 +123,65 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
     @Override
     protected @Nullable JComponent createCenterPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints labelC = new GridBagConstraints();
-        labelC.gridx = 0;
-        labelC.insets = new Insets(6, 8, 6, 8);
-        labelC.anchor = GridBagConstraints.WEST;
-
-        GridBagConstraints fieldC = new GridBagConstraints();
-        fieldC.gridx = 1;
-        fieldC.weightx = 1;
-        fieldC.fill = GridBagConstraints.HORIZONTAL;
-        fieldC.insets = new Insets(6, 8, 6, 8);
-
         int row = 0;
-        labelC.gridy = row;
-        fieldC.gridy = row;
-        panel.add(new JLabel("Project"), labelC);
-        panel.add(projectInfoLabel, fieldC);
+        row = addSection(panel, row, "Project");
+        row = addSettingsRow(panel, row, "Name", projectInfoLabel);
+        row = addSettingsRow(panel, row, "Platform", projectPlatformLabel);
+        row = addSettingsRow(panel, row, "Directory", projectDirectoryLabel);
 
-        row++;
-        labelC.gridy = row;
-        fieldC.gridy = row;
-        panel.add(new JLabel("Python Environment (blank = IDE)"), labelC);
-        panel.add(buildPythonEnvironmentRow(), fieldC);
+        row = addSection(panel, row, "Python & Frida");
+        row = addSettingsRow(panel, row, "Python Environment (blank = IDE)", buildPythonEnvironmentRow());
+        row = addSettingsRow(panel, row, "Environment Source", environmentDetailsController.getSourceLabel());
+        row = addSettingsRow(panel, row, "Resolved Interpreter", environmentDetailsController.getResolvedPythonLabel());
+        row = addSettingsRow(panel, row, "Frida Version", environmentDetailsController.getFridaVersionLabel());
 
-        row++;
-        labelC.gridy = row;
-        fieldC.gridy = row;
-        panel.add(new JLabel("Connection Mode"), labelC);
-        panel.add(connectionModeCombo, fieldC);
+        row = addSection(panel, row, "Connection & Target");
+        row = addSettingsRow(panel, row, "Connection Mode", connectionModeCombo);
+        row = addSettingsRow(panel, row, "Remote Host:Port", buildRemoteHostRow());
+        row = addSettingsRow(panel, row, "Target (package/bundle)", buildTargetPanel());
+        addSettingsRow(panel, row, "Scope", scopeCombo);
 
-        row++;
-        labelC.gridy = row;
-        fieldC.gridy = row;
-        panel.add(new JLabel("Remote Host:Port"), labelC);
-        panel.add(buildRemoteHostRow(), fieldC);
-
-        row++;
-        labelC.gridy = row;
-        fieldC.gridy = row;
-        panel.add(new JLabel("Target (package/bundle)"), labelC);
-        panel.add(buildTargetPanel(), fieldC);
-
-        row++;
-        labelC.gridy = row;
-        fieldC.gridy = row;
-        panel.add(new JLabel("Scope"), labelC);
-        panel.add(scopeCombo, fieldC);
+        Dimension preferredSize = panel.getPreferredSize();
+        int minimumWidth = JBUI.scale(760);
+        if (preferredSize.width < minimumWidth) {
+            preferredSize.width = minimumWidth;
+        }
+        panel.setPreferredSize(preferredSize);
 
         return panel;
+    }
+
+    private int addSection(@NotNull JPanel panel, int row, @NotNull String title) {
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = 0;
+        constraints.gridy = row;
+        constraints.gridwidth = 2;
+        constraints.weightx = 1;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.insets = new Insets(JBUI.scale(8), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8));
+        panel.add(new TitledSeparator(title), constraints);
+        return row + 1;
+    }
+
+    private int addSettingsRow(@NotNull JPanel panel,
+                               int row,
+                               @NotNull String label,
+                               @NotNull JComponent component) {
+        GridBagConstraints labelConstraints = new GridBagConstraints();
+        labelConstraints.gridx = 0;
+        labelConstraints.gridy = row;
+        labelConstraints.anchor = GridBagConstraints.WEST;
+        labelConstraints.insets = new Insets(JBUI.scale(5), JBUI.scale(8), JBUI.scale(5), JBUI.scale(12));
+        panel.add(new JLabel(label), labelConstraints);
+
+        GridBagConstraints componentConstraints = new GridBagConstraints();
+        componentConstraints.gridx = 1;
+        componentConstraints.gridy = row;
+        componentConstraints.weightx = 1;
+        componentConstraints.fill = GridBagConstraints.HORIZONTAL;
+        componentConstraints.insets = new Insets(JBUI.scale(5), JBUI.scale(8), JBUI.scale(5), JBUI.scale(8));
+        panel.add(component, componentConstraints);
+        return row + 1;
     }
 
     private JPanel buildPythonEnvironmentRow() {
@@ -234,8 +259,17 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
     private void bindActions() {
         refreshTargetsBtn.addActionListener(e -> refreshTargets());
         browsePythonEnvironmentBtn.addActionListener(e -> browsePythonEnvironment());
-        useProjectPythonBtn.addActionListener(e -> pythonEnvironmentCombo.getEditor().setItem(""));
+        useProjectPythonBtn.addActionListener(e -> {
+            setPythonEnvironmentPath("");
+            markEnvironmentDetailsStale();
+        });
         testPythonEnvironmentBtn.addActionListener(e -> testPythonEnvironment());
+        pythonEnvironmentCombo.addActionListener(e -> {
+            if (!updatingPythonEnvironmentSelection) {
+                markEnvironmentDetailsStale();
+            }
+        });
+        bindPythonEnvironmentEditorChanges();
         scopeCombo.addActionListener(e -> {
             if (selectTargetRadio.isSelected()) {
                 refreshTargets();
@@ -249,6 +283,35 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         });
 
         connectionModeCombo.addActionListener(e -> updateConnectionUi());
+    }
+
+    private void bindPythonEnvironmentEditorChanges() {
+        Component editorComponent = pythonEnvironmentCombo.getEditor().getEditorComponent();
+        if (!(editorComponent instanceof JTextField textField)) {
+            return;
+        }
+        textField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent event) {
+                handlePythonEnvironmentEditorChange();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent event) {
+                handlePythonEnvironmentEditorChange();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent event) {
+                handlePythonEnvironmentEditorChange();
+            }
+        });
+    }
+
+    private void handlePythonEnvironmentEditorChange() {
+        if (!updatingPythonEnvironmentSelection) {
+            markEnvironmentDetailsStale();
+        }
     }
 
     private void loadFromProject() {
@@ -266,56 +329,78 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             manualTargetRadio.setEnabled(false);
             selectTargetRadio.setEnabled(false);
             setPythonEnvironmentControlsEnabled(false);
+            setEnvironmentDetailsUnavailable("No active project");
             return;
         }
         setPythonEnvironmentControlsEnabled(false);
         ModalityState modality = ModalityState.stateForComponent(projectInfoLabel);
-        projectManager.loadProjectConfigAsync(activeProject, cfg -> {
-            activeProjectConfig = cfg;
-            setPythonEnvironmentControlsEnabled(true);
-            setPythonEnvironmentPath(cfg.pythonEnvironmentPath);
-            connectionModeCombo.setEnabled(true);
-            manualTargetRadio.setEnabled(true);
-            selectTargetRadio.setEnabled(true);
-            scopeCombo.setSelectedItem(cfg.processScope);
-            setTargetText(cfg.lastTarget);
-            if (cfg.connectionMode != null) {
-                connectionModeCombo.setSelectedItem(cfg.connectionMode);
-            } else {
-                connectionModeCombo.setSelectedItem(FridaConnectionMode.USB);
-            }
-
-            ZaFridaSettingsState st = ApplicationManager.getApplication()
-                    .getService(ZaFridaSettingsService.class)
-                    .getState();
-            String host;
-            if (ZaStrUtil.isNotBlank(cfg.remoteHost)) {
-                host = cfg.remoteHost;
-            } else {
-                host = ZaFridaNetUtil.normalizeHost(st.defaultRemoteHost);
-            }
-            if (host.isEmpty()) {
-                host = ZaFridaNetUtil.LOOPBACK_HOST;
-            }
-            int port;
-            if (cfg.remotePort > 0) {
-                port = cfg.remotePort;
-            } else {
-                port = ZaFridaNetUtil.defaultPort(st.defaultRemotePort);
-            }
-            remoteHostField.setText(host);
-            remotePortField.setText(String.valueOf(port));
-
-            manualTargetRadio.setSelected(cfg.targetManual);
-            selectTargetRadio.setSelected(!cfg.targetManual);
-
-            updateConnectionUi();
-            updateTargetModeUi();
-            if (selectTargetRadio.isSelected()) {
-                refreshTargets();
-            }
-        }, modality);
+        ZaFridaFridaProject projectToLoad = activeProject;
+        projectManager.loadProjectUiStateAsync(
+                projectToLoad,
+                state -> applyLoadedProjectState(projectToLoad, state, modality),
+                modality
+        );
         loadReusablePythonEnvironments(modality);
+    }
+
+    private void applyLoadedProjectState(@NotNull ZaFridaFridaProject projectToLoad,
+                                         @NotNull ZaFridaProjectManager.ProjectUiState state,
+                                         @NotNull ModalityState modality) {
+        if (!Objects.equals(projectToLoad, activeProject)
+                || !Objects.equals(projectToLoad, projectManager.getActiveProject())) {
+            return;
+        }
+        ZaFridaProjectConfig config = state.getConfig();
+        activeProjectConfig = config;
+        updateProjectDetails(state);
+        applyProjectConfigToControls(config);
+        inspectPythonEnvironment(config.pythonEnvironmentPath, modality, false);
+    }
+
+    private void applyProjectConfigToControls(@NotNull ZaFridaProjectConfig config) {
+        setPythonEnvironmentControlsEnabled(true);
+        setPythonEnvironmentPath(config.pythonEnvironmentPath);
+        connectionModeCombo.setEnabled(true);
+        manualTargetRadio.setEnabled(true);
+        selectTargetRadio.setEnabled(true);
+        scopeCombo.setSelectedItem(config.processScope);
+        setTargetText(config.lastTarget);
+        if (config.connectionMode != null) {
+            connectionModeCombo.setSelectedItem(config.connectionMode);
+        } else {
+            connectionModeCombo.setSelectedItem(FridaConnectionMode.USB);
+        }
+        applyRemoteEndpoint(config);
+        manualTargetRadio.setSelected(config.targetManual);
+        selectTargetRadio.setSelected(!config.targetManual);
+        updateConnectionUi();
+        updateTargetModeUi();
+        if (selectTargetRadio.isSelected()) {
+            refreshTargets();
+        }
+    }
+
+    private void applyRemoteEndpoint(@NotNull ZaFridaProjectConfig config) {
+        ZaFridaSettingsState settingsState = ApplicationManager.getApplication()
+                .getService(ZaFridaSettingsService.class)
+                .getState();
+        String host;
+        if (ZaStrUtil.isNotBlank(config.remoteHost)) {
+            host = config.remoteHost;
+        } else {
+            host = ZaFridaNetUtil.normalizeHost(settingsState.defaultRemoteHost);
+        }
+        if (host.isEmpty()) {
+            host = ZaFridaNetUtil.LOOPBACK_HOST;
+        }
+        int port;
+        if (config.remotePort > 0) {
+            port = config.remotePort;
+        } else {
+            port = ZaFridaNetUtil.defaultPort(settingsState.defaultRemotePort);
+        }
+        remoteHostField.setText(host);
+        remotePortField.setText(String.valueOf(port));
     }
 
     private void setPythonEnvironmentControlsEnabled(boolean enabled) {
@@ -353,11 +438,16 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             }
         }
 
-        pythonEnvironmentCombo.removeAllItems();
-        for (String option : options) {
-            pythonEnvironmentCombo.addItem(option);
+        updatingPythonEnvironmentSelection = true;
+        try {
+            pythonEnvironmentCombo.removeAllItems();
+            for (String option : options) {
+                pythonEnvironmentCombo.addItem(option);
+            }
+            pythonEnvironmentCombo.getEditor().setItem(selectedPath);
+        } finally {
+            updatingPythonEnvironmentSelection = false;
         }
-        pythonEnvironmentCombo.getEditor().setItem(selectedPath);
     }
 
     private void browsePythonEnvironment() {
@@ -368,58 +458,14 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         VirtualFile selected = FileChooser.chooseFile(descriptor, project, initial);
         if (selected != null) {
             setPythonEnvironmentPath(selected.getPath());
+            markEnvironmentDetailsStale();
         }
     }
 
     private void testPythonEnvironment() {
         String configuredPath = getPythonEnvironmentPath();
         ModalityState modality = ModalityState.stateForComponent(pythonEnvironmentCombo);
-        int testGeneration = ++pythonValidationGeneration;
-        testPythonEnvironmentBtn.setEnabled(false);
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                PythonEnvInfo environment;
-                if (configuredPath.isEmpty()) {
-                    environment = ProjectPythonEnvResolver.resolveIdeProject(project);
-                } else {
-                    environment = ProjectPythonEnvResolver.resolveConfiguredPath(configuredPath);
-                }
-                if (environment == null) {
-                    throw new PythonEnvResolutionException("PyCharm project Python interpreter was not found");
-                }
-                String version = fridaCliService.detectFridaPythonVersion(environment);
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    if (testGeneration != pythonValidationGeneration || project.isDisposed()) {
-                        return;
-                    }
-                    testPythonEnvironmentBtn.setEnabled(true);
-                    if (!configuredPath.equals(getPythonEnvironmentPath())) {
-                        return;
-                    }
-                    Messages.showInfoMessage(
-                            project,
-                            String.format("Frida %s\nPython: %s", version, environment.getPythonHome()),
-                            "Python Environment"
-                    );
-                }, modality);
-            } catch (RuntimeException e) {
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    if (testGeneration != pythonValidationGeneration || project.isDisposed()) {
-                        return;
-                    }
-                    testPythonEnvironmentBtn.setEnabled(true);
-                    if (!configuredPath.equals(getPythonEnvironmentPath())) {
-                        return;
-                    }
-                    String message = e.getMessage();
-                    if (ZaStrUtil.isBlank(message)) {
-                        message = e.getClass().getSimpleName();
-                    }
-                    logError(String.format("[ZAFrida] Python environment test failed: %s", message));
-                    Messages.showErrorDialog(project, message, "Python Environment Test Failed");
-                }, modality);
-            }
-        });
+        inspectPythonEnvironment(configuredPath, modality, true);
     }
 
     private @Nullable VirtualFile resolvePythonEnvironmentSelection() {
@@ -439,7 +485,12 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         if (path != null) {
             normalized = path.trim();
         }
-        pythonEnvironmentCombo.getEditor().setItem(normalized);
+        updatingPythonEnvironmentSelection = true;
+        try {
+            pythonEnvironmentCombo.getEditor().setItem(normalized);
+        } finally {
+            updatingPythonEnvironmentSelection = false;
+        }
     }
 
     private @NotNull String getPythonEnvironmentPath() {
@@ -455,11 +506,88 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             projectInfoLabel.setIcon(null);
             projectInfoLabel.setText("No active project");
             projectInfoLabel.setToolTipText("No active project");
+            projectPlatformLabel.setText("—");
+            projectDirectoryLabel.setText("—");
+            projectDirectoryLabel.setToolTipText(null);
             return;
         }
         projectInfoLabel.setIcon(ZaFridaIcons.forPlatform(activeProject.getPlatform()));
         projectInfoLabel.setText(activeProject.getName());
         projectInfoLabel.setToolTipText(String.format("Platform: %s", activeProject.getPlatform().name()));
+        projectPlatformLabel.setText(formatPlatform(activeProject));
+        projectDirectoryLabel.setText(activeProject.getRelativeDir());
+        projectDirectoryLabel.setToolTipText(activeProject.getRelativeDir());
+    }
+
+    private void updateProjectDetails(@NotNull ZaFridaProjectManager.ProjectUiState state) {
+        ZaFridaFridaProject currentProject = activeProject;
+        if (currentProject == null) {
+            return;
+        }
+        VirtualFile projectDirectory = state.getProjectDir();
+        if (projectDirectory == null) {
+            projectDirectoryLabel.setText(String.format("%s (not found)", currentProject.getRelativeDir()));
+            projectDirectoryLabel.setToolTipText("Project directory was not found");
+            return;
+        }
+        projectDirectoryLabel.setText(projectDirectory.getPath());
+        projectDirectoryLabel.setToolTipText(projectDirectory.getPath());
+    }
+
+    private @NotNull String formatPlatform(@NotNull ZaFridaFridaProject fridaProject) {
+        if (fridaProject.getPlatform() == ZaFridaPlatform.ANDROID) {
+            return "Android";
+        }
+        return "iOS";
+    }
+
+    private void inspectPythonEnvironment(@NotNull String configuredPath,
+                                          @NotNull ModalityState modality,
+                                          boolean showResultDialog) {
+        testPythonEnvironmentBtn.setEnabled(false);
+        environmentDetailsController.inspect(configuredPath, modality, result -> {
+            if (!configuredPath.equals(getPythonEnvironmentPath())) {
+                return;
+            }
+            testPythonEnvironmentBtn.setEnabled(activeProject != null);
+            if (showResultDialog) {
+                showEnvironmentInspectionResult(result);
+            }
+        });
+    }
+
+    private void showEnvironmentInspectionResult(
+            @NotNull ZaFridaEnvironmentDetailsController.InspectionResult result) {
+        String errorMessage = result.getErrorMessage();
+        if (ZaStrUtil.isNotBlank(errorMessage)) {
+            logError(String.format("[ZAFrida] Python environment test failed: %s", errorMessage));
+            Messages.showErrorDialog(project, errorMessage, "Python Environment Test Failed");
+            return;
+        }
+        PythonEnvInfo environment = result.getEnvironment();
+        String fridaVersion = result.getFridaVersion();
+        if (environment == null || ZaStrUtil.isBlank(fridaVersion)) {
+            return;
+        }
+        Messages.showInfoMessage(
+                project,
+                String.format(
+                        "Frida %s\nPython: %s\nSource: %s",
+                        fridaVersion,
+                        environment.getPythonHome(),
+                        ZaFridaEnvironmentDetailsController.environmentSourceText(environment)
+                ),
+                "Python Environment"
+        );
+    }
+
+    private void markEnvironmentDetailsStale() {
+        environmentDetailsController.markStale();
+        testPythonEnvironmentBtn.setEnabled(activeProject != null);
+    }
+
+    private void setEnvironmentDetailsUnavailable(@Nullable String reason) {
+        environmentDetailsController.setUnavailable(reason);
     }
 
     private void refreshTargets() {
@@ -624,6 +752,7 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
     @Override
     public void doCancelAction() {
         pythonValidationGeneration++;
+        environmentDetailsController.cancelPendingInspection();
         targetRefreshGeneration++;
         super.doCancelAction();
     }

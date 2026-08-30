@@ -29,6 +29,7 @@
 
         <applicationService serviceImplementation="com.zafrida.ui.settings.ZaFridaSettingsService"/>
         <applicationService serviceImplementation="com.zafrida.ui.frida.FridaCliService"/>
+        <applicationService serviceImplementation="com.zafrida.ui.toolwindow.ZaFridaPluginUpdateService"/>
         <applicationService serviceImplementation="com.zafrida.ui.adb.AdbService"/>
         <applicationService serviceImplementation="com.zafrida.ui.adb.AdbTraceLogSyncService"/>
         <applicationService serviceImplementation="com.zafrida.ui.diagnostics.ZaFridaDiagnosticsService"/>
