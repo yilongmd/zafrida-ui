@@ -2,6 +2,8 @@
 
 The persisted Run and Attach logs are the primary evidence for process startup, TypeScript compilation, agent exceptions, transport loss, and exit codes. Console text is only a fallback when no log file exists.
 
+Treat returned log content as exact diagnostic evidence. Do not redact, normalize, deduplicate, or rewrite paths, package names, command arguments, agent output, or stack traces before analysis. Quote only the relevant excerpt when answering, but preserve the original values that affect Frida behavior.
+
 ## Choose the source
 
 1. Call `session-status` or `state` to identify Run versus Attach and the current path.

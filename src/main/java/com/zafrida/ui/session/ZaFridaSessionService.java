@@ -26,15 +26,11 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
 /** 会话映射的读写全部由 synchronized 方法或显式 synchronized 块保护。 */
 public final class ZaFridaSessionService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaSessionService.class);
-    private static final Pattern SENSITIVE_ARGUMENT = Pattern.compile(
-            "(?i)(--(?:token|password|secret|api-key)(?:=|\\s+))(\\\"[^\\\"]*\\\"|'[^']*'|\\S+)"
-    );
 
     private final @NotNull Project project;
     private final @NotNull FridaCliService fridaCliService;
@@ -59,8 +55,8 @@ public final class ZaFridaSessionService implements Disposable {
         stop(type);
 
         GeneralCommandLine commandLine = fridaCliService.buildRunCommandLine(project, config);
-        String safeCommandLine = redactSensitiveArguments(commandLine.getCommandLineString());
-        info.accept(String.format("[ZAFrida] Command: %s", safeCommandLine));
+        String commandLineText = commandLine.getCommandLineString();
+        info.accept(String.format("[ZAFrida] Command: %s", commandLineText));
         ProcessHandler handler = fridaCliService.createRunProcessHandler(commandLine);
 
         String basePath = project.getBasePath();
@@ -82,7 +78,7 @@ public final class ZaFridaSessionService implements Disposable {
             try {
                 writer = new SessionLogWriter(logFile);
                 writer.append(String.format("[ZAFrida] Session started: %s%n", Instant.now()));
-                writer.append(String.format("[ZAFrida] Command: %s%n", safeCommandLine));
+                writer.append(String.format("[ZAFrida] Command: %s%n", commandLineText));
             } catch (Exception e) {
                 LOG.warn(String.format("Create Frida session log writer failed: type=%s file=%s", type, logFile), e);
                 error.accept(String.format("[ZAFrida] Log disabled: %s", e.getMessage()));
@@ -122,7 +118,7 @@ public final class ZaFridaSessionService implements Disposable {
         RunningSession session = new RunningSession(
                 handler,
                 logPathStr,
-                safeCommandLine,
+                commandLineText,
                 System.currentTimeMillis()
         );
         sessions.put(type, session);
@@ -193,10 +189,6 @@ public final class ZaFridaSessionService implements Disposable {
             return null;
         }
         return session;
-    }
-
-    private static @NotNull String redactSensitiveArguments(@NotNull String commandLine) {
-        return SENSITIVE_ARGUMENT.matcher(commandLine).replaceAll("$1<redacted>");
     }
 
     public @NotNull ProcessAdapter createUiStateListener(@NotNull Runnable onTerminated) {
