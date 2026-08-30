@@ -7,6 +7,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
@@ -17,6 +18,7 @@ import com.zafrida.ui.fridaproject.ZaFridaProjectFiles;
 import com.zafrida.ui.fridaproject.ZaFridaProjectManager;
 import com.zafrida.ui.ui.ZaFridaMainToolWindow;
 import com.zafrida.ui.ui.ZaFridaRunPanel;
+import com.zafrida.ui.util.ProjectFileUtil;
 import com.zafrida.ui.util.ZaFridaIcons;
 import com.zafrida.ui.util.ZaFridaNotifier;
 import org.jetbrains.annotations.NotNull;
@@ -24,37 +26,20 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JComponent;
 
-/**
- * [Action] 在编辑器中运行当前 Frida JS 脚本。
- * <p>
- * 自动切换到脚本所属的 ZAFrida 项目并触发 Run 面板运行。
- */
 public final class RunFridaJsAction extends AnAction {
 
-    /**
-     * 构造函数，设置菜单图标。
-     */
     public RunFridaJsAction() {
         getTemplatePresentation().setIcon(ZaFridaIcons.RUN_FRIDA);
     }
 
-    /**
-     * 菜单可用性更新逻辑。
-     * @param e Action 事件
-     */
     @Override
     public void update(@NotNull AnActionEvent e) {
         Project project = e.getProject();
         VirtualFile file = resolveScriptFile(e);
-        boolean enabled = project != null && file != null && !file.isDirectory() && isJsFile(file);
-        e.getPresentation().setVisible(true);
-        e.getPresentation().setEnabled(enabled);
+        boolean enabled = project != null && ProjectFileUtil.isFridaScriptFile(file);
+        e.getPresentation().setEnabledAndVisible(enabled);
     }
 
-    /**
-     * 菜单执行逻辑。
-     * @param e Action 事件
-     */
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         Project project = e.getProject();
@@ -63,7 +48,7 @@ public final class RunFridaJsAction extends AnAction {
         }
 
         VirtualFile script = resolveScriptFile(e);
-        if (script == null || script.isDirectory() || !isJsFile(script)) {
+        if (!ProjectFileUtil.isFridaScriptFile(script)) {
             return;
         }
 
@@ -132,26 +117,15 @@ public final class RunFridaJsAction extends AnAction {
         toolWindow.activate(runTask);
     }
 
-    /**
-     * 判断是否为 JavaScript 文件。
-     * @param file 文件对象
-     * @return true 表示为 JS 文件
-     */
-    private static boolean isJsFile(@NotNull VirtualFile file) {
-        String ext = file.getExtension();
-        return ext != null && ext.equalsIgnoreCase("js");
-    }
-
-    /**
-     * 解析当前脚本文件。
-     * @param e Action 事件
-     * @return 脚本文件或 null
-     */
     private static @Nullable VirtualFile resolveScriptFile(@NotNull AnActionEvent e) {
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-        if (file != null) return file;
+        if (file != null) {
+            return file;
+        }
         VirtualFile[] files = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY);
-        if (files != null && files.length > 0) return files[0];
+        if (files != null && files.length > 0) {
+            return files[0];
+        }
         Editor editor = e.getData(CommonDataKeys.EDITOR);
         if (editor != null) {
             return FileDocumentManager.getInstance().getFile(editor.getDocument());
@@ -159,33 +133,29 @@ public final class RunFridaJsAction extends AnAction {
         return null;
     }
 
-    /**
-     * 查找脚本所属的 Frida 项目目录。
-     * @param project 当前 IDE 项目
-     * @param file 脚本文件
-     * @return 项目目录或 null
-     */
     private static @Nullable VirtualFile findFridaProjectDir(@NotNull Project project, @NotNull VirtualFile file) {
-        VirtualFile base = project.getBaseDir();
-        if (base == null) return null;
+        VirtualFile base = ProjectUtil.guessProjectDir(project);
+        if (base == null) {
+            return null;
+        }
 
-        VirtualFile dir = file.isDirectory() ? file : file.getParent();
+        VirtualFile dir = file.getParent();
+        if (file.isDirectory()) {
+            dir = file;
+        }
         while (dir != null && VfsUtilCore.isAncestor(base, dir, false)) {
             VirtualFile marker = dir.findChild(ZaFridaProjectFiles.PROJECT_FILE);
             if (marker != null && !marker.isDirectory()) {
                 return dir;
             }
-            if (dir.equals(base)) break;
+            if (dir.equals(base)) {
+                break;
+            }
             dir = dir.getParent();
         }
         return null;
     }
 
-    /**
-     * 在 ToolWindow 中查找 Run 面板。
-     * @param toolWindow 工具窗口
-     * @return Run 面板或 null
-     */
     private static @Nullable ZaFridaRunPanel findRunPanel(@NotNull ToolWindow toolWindow) {
         Content[] contents = toolWindow.getContentManager().getContents();
         for (Content content : contents) {

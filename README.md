@@ -4,7 +4,7 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-当前版本： 0.3.6
+当前版本： 0.3.7
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -34,17 +34,18 @@ ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，�
 -----------------------------------
 
 1.  **安装插件**: 在 IDE 插件市场搜索 "ZAFrida" 或通过磁盘安装。
-2.  **配置环境**: 打开 `Settings` -> `Tools` -> `ZAFrida`，配置 `frida` 可执行文件路径（如果未自动识别）。
+2.  **配置默认环境**: 默认使用当前 PyCharm 项目的 Python Interpreter；全局 `Settings` -> `Tools` -> `ZAFrida` 仅保留工具名/路径默认值。
 3.  **创建项目**: 在项目视图右键 -> `New Frida Project`。
-4.  **编写/选择脚本**: 在 Run 面板选择你的 `agent.js`。
+    * 如该项目需要不同的 Frida 版本，打开 ZAFrida `Project Settings`，选择 Python 解释器或环境目录并点击 `Test`。
+4.  **编写/选择脚本**: 在 Run 面板选择你的 `agent.js` 或 `agent.ts`。
 5.  **Hook 调试**:
 * 连接设备 (USB 或 Remote 或 Gadget)。
 * 选择目标进程或包名。
 * 点击 **Run**。
 6.  **使用模板**: 切换到 `Templates` 标签页，勾选你需要的 Hook 功能（如 "SSL Pinning Bypass"），代码会自动注入到你的脚本中。
 7.  **Skills 自动化（可选）**: 默认关闭。前往 `Settings/Preferences -> ZAFrida -> Skills HTTP API`，勾选 `Enable Skills` 后可自动启动本地 API（也可手动 `Start/Stop`），CLI 与模板位置：
-    * `skills-cli/zafrida_skill_cli.py`
-    * `skills-template/zafrida-http-control/`
+    * Skill 与主 CLI：`skills-template/zafrida-http-control/`
+    * 旧路径兼容启动器：`skills-cli/zafrida_skill_cli.py`
 
 交流群二维码
 -----------------------------------
@@ -64,10 +65,10 @@ ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，�
   * 支持 **Force Stop** 强制停止目标应用。
   * 内置控制台日志输出，并自动保存日志到项目目录 `zafrida-logs/`。
 
-* **JS 编辑器右键菜单（重要）**
-  * 在 Frida JS 文件编辑区中右键，可直接选择：
-    * **Run Frida JS**：以当前 JS 文件作为主脚本执行（默认 Spawn）。
-    * **Attach Frida JS**：将当前 JS 文件作为附加脚本注入到已运行的目标进程。
+* **JS / TypeScript 编辑器右键菜单（重要）**
+  * 在 Frida `.js` 或 `.ts` 文件编辑区中右键，可直接选择：
+    * **Run Frida Script**：以当前文件作为主脚本执行（默认 Spawn）。
+    * **Attach Frida Script**：将当前文件作为附加脚本注入到已运行的目标进程。
   * 执行前会自动保存当前文件，并自动切换到脚本所属的 ZAFrida Project。
   * 适合快速 PoC、Demo 验证、Gadget 模式或已运行进程的即时注入。
   * **快捷键**：
@@ -75,7 +76,7 @@ ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，�
     * macOS：`⌘ + ⌥ + S`
 
 * **编辑器右键 Snippets 插入**
-  * 在 JS 编辑器右键菜单中提供 **ZAFrida Frida Snippets**。
+  * 在 JS / TypeScript 编辑器右键菜单中提供 **ZAFrida Frida Snippets**。
   * 一键插入常用 Frida 代码片段，例如：
     * `Java.perform` 包裹结构
     * Java 方法 Hook 模板
@@ -100,26 +101,31 @@ ZAFrida 并不替代 Frida，而是作为 `frida-tools` 的强大 UI 外壳，�
   * 切换项目后，UI 状态与配置会自动恢复。
 
 * **智能 Python / Frida 环境解析**
-  * 自动解析当前 PyCharm 项目的 Python SDK（venv / conda）。
-  * 动态注入 PATH，确保调用正确的 `frida` / `frida-tools`。
-  * 对 Remote / Gadget 场景进行兼容处理，避免误注入本地环境。
+  * 默认解析当前 PyCharm 项目的 Python SDK；每个 ZAFrida Project 可单独覆盖解释器或环境目录。
+  * 支持本地 system/pyenv、venv/virtualenv、Conda、uv、Poetry、Pipenv、Hatch 环境。
+  * 多个 ZAFrida Project 可选择同一路径共享环境，无需复制 venv；适合分别维护 Frida 16/17 环境。
+  * 当前 IDE 环境或显式项目环境缺少 `frida-tools` 时直接报错，不会静默串用系统 PATH 中的另一版本；`Test` 可显示实际 Frida 版本。
+  * SSH、Docker、Docker Compose、WSL 等远程 Python Interpreter 暂不能用于本机 Frida 子进程。
 
-* **开发辅助功能**
-  * 支持一键安装 `frida-gum.d.ts`，为 Frida JS 提供类型提示与智能补全。
+* **Frida 17 / TypeScript**
+  * 文件选择、右键 Run/Attach 和 Snippets 支持 `.js` / `.ts`；Frida 17 的 REPL 会对 `-l agent.ts` 自动编译。
+  * 内置模板已迁移到 Frida 17 的现代 Module/NativePointer API，同时保持 Frida 16 常用环境可用。
+  * frida-tools REPL 会兼容性携带标准 Java/ObjC bridges；使用 npm/第三方模块 `import` 时应通过 `frida-create -t agent` 或等价工程管理依赖。
 
 * **Skills 本地自动化接口**
-  * 新增本地 Skills HTTP API（默认关闭），可用于脚本化控制项目切换、设备/连接模式设置、Run/Attach 触发、日志路径与日志内容读取。
+  * 本地 Skills HTTP API（默认关闭）支持能力发现、项目/Python 环境、设备与进程、Run/Attach、历史日志列表和基于字节游标的增量日志读取。
+  * Skill 内置有界 `wait-device` / `wait-session` 恢复流程，并区分可安全重试的读取与不可自动重放的副作用操作。
   * 开启方式：`Settings/Preferences -> ZAFrida -> Skills HTTP API`，勾选 `Enable Skills`。
   * 配套 CLI 与模板：
-    * `skills-cli/zafrida_skill_cli.py`
-    * `skills-template/zafrida-http-control/`
+    * `skills-template/zafrida-http-control/`（主 Skill 与 CLI）
+    * `skills-cli/zafrida_skill_cli.py`（旧路径兼容启动器）
 
 适用场景
 -----------------------------------
 ZAFrida UI 适用于所有使用 Frida 进行逆向工程的场景，特别是：
 * Android / iOS App 渗透测试与逆向分析。
 * 需要频繁切换不同 Hook 脚本的调试过程。
-* 习惯使用 IDE (PyCharm/IDEA) 进行 Python 和 JS 混合开发的工程师。
+* 习惯使用 IDE (PyCharm/IDEA) 进行 Python、JavaScript 和 TypeScript 混合开发的工程师。
 
 技术文档
 -----------------------------------

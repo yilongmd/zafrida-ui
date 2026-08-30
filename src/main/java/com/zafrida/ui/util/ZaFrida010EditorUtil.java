@@ -13,13 +13,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/**
- * [工具类] 用 010 Editor 打开文件（自动探测可执行文件 + 支持用户在设置中指定路径）。
- * <p>
- * 约定：
- * - macOS 默认探测 {@code /Applications/010 Editor.app}
- * - Windows/Linux 默认优先从 PATH 中探测（如 010Editor.exe / 010editor）
- */
 public final class ZaFrida010EditorUtil {
 
     private static final String MAC_DEFAULT_APP = "/Applications/010 Editor.app";
@@ -27,16 +20,10 @@ public final class ZaFrida010EditorUtil {
     private ZaFrida010EditorUtil() {
     }
 
-    /**
-     * 在后台线程中打开文件。
-     */
     public static void openFileIn010EditorAsync(@NotNull Project project, @NotNull String filePath) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> openFileIn010Editor(project, filePath));
     }
 
-    /**
-     * 打开文件（建议在后台线程调用）。
-     */
     public static void openFileIn010Editor(@NotNull Project project, @NotNull String filePath) {
         if (ZaStrUtil.isBlank(filePath)) {
             ApplicationManager.getApplication().invokeLater(() ->
@@ -131,7 +118,6 @@ public final class ZaFrida010EditorUtil {
                 return new EditorCommand(debugName, cmd);
             }
 
-            // 010Editor.cmd / .bat / PATH 需要走 cmd.exe
             List<String> cmd = new ArrayList<>();
             cmd.add("cmd.exe");
             cmd.add("/c");
@@ -151,7 +137,6 @@ public final class ZaFrida010EditorUtil {
             return null;
         }
 
-        // 允许用户配置 PATH 中的命令名
         if (!hasPathSeparator(raw)) {
             File inPath = findInPathExecutable(raw);
             if (inPath != null) {
@@ -190,7 +175,6 @@ public final class ZaFrida010EditorUtil {
     }
 
     private static @Nullable String autoDetect010EditorExecutable() {
-        // 1) PATH 优先
         File inPath = null;
         if (SystemInfo.isWindows) {
             inPath = findInPathExecutable("010Editor.exe");
@@ -207,7 +191,6 @@ public final class ZaFrida010EditorUtil {
             return inPath.getAbsolutePath();
         }
 
-        // 2) macOS: /Applications
         if (SystemInfo.isMac) {
             File app = new File(MAC_DEFAULT_APP);
             if (app.exists() && app.isDirectory()) {
@@ -216,7 +199,6 @@ public final class ZaFrida010EditorUtil {
             return null;
         }
 
-        // 3) Windows: 常见安装目录
         if (SystemInfo.isWindows) {
             List<File> candidates = new ArrayList<>();
             String programFiles = System.getenv("ProgramFiles");
@@ -260,4 +242,3 @@ public final class ZaFrida010EditorUtil {
         return null;
     }
 }
-

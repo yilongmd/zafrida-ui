@@ -40,40 +40,22 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/**
- * [UI组件] 多功能工具面板（放置不常用但高频卡壳的功能）。
- * <p>
- * 设计原则：
- * 1) 顶部第一行优先展示当前 ZAFrida 子项目的平台图标（Android/iOS）。
- * 2) UI 仅负责触发与展示，耗时 I/O/外部进程由 Service 在后台执行。
- */
 public final class ZaFridaToolsPanel extends JPanel implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaToolsPanel.class);
 
-    /** IDE 项目实例 */
     private final @NotNull Project project;
-    /** 控制台容器（复用 Run Console 输出） */
     private final @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel;
-    /** Run 控制台（工具类输出统一走 Run Console） */
     private final @NotNull ZaFridaConsolePanel runConsolePanel;
-    /** ZAFrida 项目管理器 */
     private final @NotNull ZaFridaProjectManager fridaProjectManager;
 
-    /** 平台图标 */
     private final JLabel platformIconLabel = new JLabel();
-    /** 平台文字 */
     private final JLabel platformTextLabel = new JLabel("-", SwingConstants.LEFT);
 
-    /** Pull Trace Logs 按钮 */
     private final JButton pullTraceLogsBtn = new JButton("Pull Logs");
-    /** 最后一次同步的 trace 文件名 */
     private final JLabel traceLastFileLabel = new JLabel("(not pulled)");
-    /** 定位 trace 文件按钮 */
     private final JButton locateTraceFileBtn = new JButton("");
-    /** 用 VS Code 打开 trace 文件按钮 */
     private final JButton openTraceInVsCodeBtn = new JButton("");
-    /** 用 010 Editor 打开 trace 文件按钮 */
     private final JButton openTraceIn010EditorBtn = new JButton("");
 
     private @Nullable Path lastTraceLocalFile;
@@ -395,7 +377,6 @@ public final class ZaFridaToolsPanel extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
-        // message bus connection disposed by Disposer (this)
-        // 订阅连接会由 Disposer 统一释放
+        // MessageBus 连接绑定到 this，由 Disposer 自动释放。
     }
 }

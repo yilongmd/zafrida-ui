@@ -83,7 +83,7 @@ In the **Run** panel:
 
 1. **Project**: select your project
 2. **Device**: refresh and select device
-3. **Run Script**: select default `xxx.js` under the project (or your own `agent.js`)
+3. **Run Script**: select the default `xxx.js`, or your own `agent.js` / `agent.ts`
 4. **Target**: package name / process name (usually package name)
 
 Then click:
@@ -124,13 +124,16 @@ This page does two things: **make Doctor all green**, and ensure you can run fri
 - IntelliJ IDEA also works, but you must install/enable **Python plugin** (or Doctor may fail to parse Python SDK)
 ---
 
-### 0x01 Python environment (strongly recommend venv/conda)
+### 0x01 Python environment
 
-Minimum requirement: the current IDE project can resolve a Python Interpreter.
+ZAFrida uses the current PyCharm project interpreter by default. Each ZAFrida Project can instead select an interpreter file or environment root under `Project Settings -> Python Environment`; click `Test` to verify the effective Frida version.
+
+Local system/pyenv, venv/virtualenv, Conda, uv, Poetry, Pipenv, and Hatch environments are supported. Multiple ZAFrida Projects may share the same path without copying the venv. Remote SSH, Docker, Docker Compose, and WSL interpreters cannot currently back a local Frida process.
 ```bash
-pip install frida==<recommended version, e.g., 16.5.7>
-pip install frida-tools==<match the frida version>
+python -m pip install frida frida-tools
 ```
+
+For long-lived projects, pin a tested `frida` / `frida-tools` pair with `==` inside each environment.
 
 Verify:
 
@@ -138,6 +141,8 @@ Verify:
 frida --version
 frida-ls-devices
 ```
+
+The Frida 17 frida-tools REPL can load `.ts` directly. With Frida 16, compile it to `.js` first with `frida-compile`. ZAFrida never silently falls back between the two environments.
 
 ---
 
@@ -207,14 +212,15 @@ Environment Doctor turns environment issues into **actionable checks**. Highly r
 
 ### 0x01 How to fix common failures
 
-#### A. Project Python SDK failed
+#### A. Python Environment failed
 
-- IDE -> Settings -> Python Interpreter
-- Choose a valid interpreter (venv/conda is fine)
+- Without a project override: choose a valid local interpreter in IDE -> Settings -> Python Interpreter.
+- With a project override: verify the path in ZAFrida `Project Settings` and click `Test`.
+- Neither the current IDE environment nor an explicit project environment falls back to another Frida installation on system PATH; install the matching `frida-tools` in the selected environment.
 
 #### B. Frida Tools Path / frida --version failed
 
-- Ensure `frida-tools` is installed in current Python env: `pip show frida-tools`
+- Ensure `frida-tools` is installed in the Python environment selected by the active project: `pip show frida-tools`
 - Or manually configure `frida / frida-ps / frida-ls-devices` paths in ZAFrida Settings
 
 #### C. frida-ls-devices failed
@@ -348,10 +354,10 @@ You no longer start from command-line parameters, but from the script file itsel
 
 ### 0x00 Two menu items
 
-Right click in any `.js` editor:
+Right click in any `.js` / `.ts` editor:
 
-- **Run Frida JS**
-- **Attach Frida JS**
+- **Run Frida Script**
+- **Attach Frida Script**
 
 The file is automatically saved before execution.
 
@@ -406,7 +412,7 @@ Goal: move "boilerplate" from your head into the context menu.
 
 ### 0x00 Where is it?
 
-Right click inside `.js` editor:
+Right click inside a `.js` / `.ts` editor:
 
 - **ZAFrida Frida Snippets** (submenu)
 
@@ -769,7 +775,7 @@ Package the whole `android/<proj>/` or `ios/<proj>/` directory (with `zafrida-pr
 
 ### 0x00 Summary first: what is ZAFrida UI?
 
-**ZAFrida UI is a Frida GUI plugin integrated into PyCharm/IntelliJ. You can right-click a JS file to Run/Attach the current script, and it auto switches to the corresponding ZAFrida project context (device/package/connection/args) based on the script path. It also provides right-click Snippets and a checkbox-based template system to assemble Hook scripts like blocks.**
+**ZAFrida UI is a Frida GUI plugin integrated into PyCharm/IntelliJ. You can right-click a JavaScript or TypeScript file to Run/Attach it, and ZAFrida automatically switches to the matching project context (device/package/connection/args). It also provides editor Snippets and a checkbox-based template system for assembling Hook scripts.**
 This makes multi-app, multi-device, and multi-connection-mode debugging much easier.
 
 ![](doc/home.png "home")
@@ -799,7 +805,7 @@ First open ZAFrida ToolWindow usually auto pops Doctor.
 
 Doctor default checks:
 
-- Project Python SDK
+- Python Environment (active ZAFrida Project override first, otherwise the IDE interpreter)
 - Frida Tools Path
 - frida --version
 - frida-ls-devices
@@ -848,10 +854,10 @@ Then click:
 
 ### 0x06 Key highlight: editor right-click Run/Attach
 
-Open any `.js` file -> right click:
+Open any `.js` / `.ts` file -> right click:
 
-- Run Frida JS
-- Attach Frida JS
+- Run Frida Script
+- Attach Frida Script
 
 It auto switches to the project based on script path and executes. This is especially handy for multi-app, multi-device, and multi-connection-mode debugging.
 

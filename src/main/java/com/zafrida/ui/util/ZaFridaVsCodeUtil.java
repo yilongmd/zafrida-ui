@@ -13,35 +13,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/**
- * [工具类] 用 VS Code 打开文件/目录（自动探测可执行文件 + 支持用户在设置中指定路径）。
- * <p>
- * 说明：
- * - 这是 UI 层的轻量封装：负责组装命令并启动外部进程。
- * - 调用方应优先使用 {@link #openPathInVsCodeAsync(Project, String)} / {@link #openFileInVsCodeAsync(Project, String)}，避免阻塞 EDT。
- */
 public final class ZaFridaVsCodeUtil {
 
     private ZaFridaVsCodeUtil() {
     }
 
-    /**
-     * 在后台线程中打开文件。
-     */
     public static void openFileInVsCodeAsync(@NotNull Project project, @NotNull String filePath) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> openFileInVsCode(project, filePath));
     }
 
-    /**
-     * 在后台线程中打开文件或目录。
-     */
     public static void openPathInVsCodeAsync(@NotNull Project project, @NotNull String path) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> openPathInVsCode(project, path));
     }
 
-    /**
-     * 打开文件（建议在后台线程调用）。
-     */
     public static void openFileInVsCode(@NotNull Project project, @NotNull String filePath) {
         if (ZaStrUtil.isBlank(filePath)) {
             ApplicationManager.getApplication().invokeLater(() ->
@@ -59,9 +43,6 @@ public final class ZaFridaVsCodeUtil {
         openPathInVsCode(project, f.getAbsolutePath());
     }
 
-    /**
-     * 打开文件或目录（建议在后台线程调用）。
-     */
     public static void openPathInVsCode(@NotNull Project project, @NotNull String path) {
         if (ZaStrUtil.isBlank(path)) {
             ApplicationManager.getApplication().invokeLater(() ->
@@ -159,7 +140,6 @@ public final class ZaFridaVsCodeUtil {
                 cmd.add(path);
                 return new VsCodeCommand(debugName, cmd);
             }
-            // code.cmd / code.bat / code (PATH) 需要走 cmd.exe
             List<String> cmd = new ArrayList<>();
             cmd.add("cmd.exe");
             cmd.add("/c");
@@ -185,7 +165,6 @@ public final class ZaFridaVsCodeUtil {
             return null;
         }
 
-        // 允许用户配置 PATH 中的命令名（如 code / code.cmd）
         if (!hasPathSeparator(raw)) {
             File inPath = findInPathExecutable(raw);
             if (inPath != null) {
@@ -223,7 +202,6 @@ public final class ZaFridaVsCodeUtil {
     }
 
     private static @Nullable String autoDetectVsCodeExecutable() {
-        // 1) PATH 优先
         File inPath = null;
         if (SystemInfo.isWindows) {
             inPath = findInPathExecutable("code.cmd");
@@ -237,7 +215,6 @@ public final class ZaFridaVsCodeUtil {
             return inPath.getAbsolutePath();
         }
 
-        // 2) macOS: /Applications 下的 app（不依赖 PATH）
         if (SystemInfo.isMac) {
             File app = new File("/Applications/Visual Studio Code.app");
             if (app.exists() && app.isDirectory()) {
@@ -246,7 +223,6 @@ public final class ZaFridaVsCodeUtil {
             return null;
         }
 
-        // 3) Windows: 常见安装目录
         if (SystemInfo.isWindows) {
             List<File> candidates = new ArrayList<>();
             String localAppData = System.getenv("LOCALAPPDATA");

@@ -1,9 +1,10 @@
 package com.zafrida.ui.fridaproject;
 
-import com.intellij.openapi.components.Service;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectUtil;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -21,43 +22,23 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * [项目核心] ZAFrida 自研项目系统管理器。
- * <p>
- * <strong>架构说明：</strong>
- * ZAFrida 引入了轻量级 "子项目" 概念，独立于 IDE 的 Project 结构。
- * <ul>
- * <li><strong>Workspace:</strong> 存储在 {@code zafrida-workspace.xml}，记录项目列表。</li>
- * <li><strong>Project:</strong> 存储在具体目录的 {@code zafrida-project.xml}，记录 App 特有的 Hook 配置。</li>
- * </ul>
- * <p>
- * <strong>职责：</strong> 负责项目的创建、加载、切换激活状态以及配置文件的读写原子性操作。
- */
-@Service(Service.Level.PROJECT)
 public final class ZaFridaProjectManager {
 
-    /** 项目切换事件主题 */
+    private static final Logger LOG = Logger.getInstance(ZaFridaProjectManager.class);
+
     public static final Topic<ZaFridaProjectListener> TOPIC =
             Topic.create("ZAFrida.ProjectSelection", ZaFridaProjectListener.class);
 
-    /** 当前 IntelliJ/PyCharm 项目实例 */
     private final Project project;
-    /** 项目存储辅助类(@link ZaFridaProjectStorage) */
     private final ZaFridaProjectStorage storage = new ZaFridaProjectStorage();
-    /** 配置读写串行队列（原子锁保证顺序） */
     private final ConfigTaskQueue configTaskQueue;
 
-    /** 当前工作区配置 */
     private ZaFridaWorkspaceConfig workspace;
-    /** 按名称索引的项目映射 */
     private final Map<String, ZaFridaFridaProject> byName = new LinkedHashMap<>();
-    /** 当前激活的项目 */
     private @Nullable ZaFridaFridaProject active;
+    // 与 active 在同一同步块更新，命令构建时无需临时读取 XML。
+    private @NotNull String activePythonEnvironmentPath = "";
 
-    /**
-     * 构造函数，初始化项目管理器并加载工作区配置。
-     * @param project
-     */
     public ZaFridaProjectManager(@NotNull Project project) {
         this.project = project;
         this.configTaskQueue = new ConfigTaskQueue(project);
@@ -65,11 +46,6 @@ public final class ZaFridaProjectManager {
         reloadAsync(null);
     }
 
-    /**
-     * 重新加载工作区配置及项目列表（后台线程）。
-     * <p>
-     * 读取完成后会在 UI 线程触发一次项目切换事件，便于刷新界面。
-     */
     public void reloadAsync(@Nullable Runnable uiAfter) {
         AtomicReference<ZaFridaFridaProject> activeRef = new AtomicReference<>();
         runConfigTask(() -> {
@@ -82,11 +58,13 @@ public final class ZaFridaProjectManager {
             if (loaded.lastSelected != null) {
                 loadedActive = loadedByName.get(loaded.lastSelected);
             }
+            String loadedPythonEnvironmentPath = loadPythonEnvironmentPathInternal(loadedActive);
             synchronized (this) {
                 workspace = loaded;
                 byName.clear();
                 byName.putAll(loadedByName);
                 active = loadedActive;
+                activePythonEnvironmentPath = loadedPythonEnvironmentPath;
             }
             activeRef.set(loadedActive);
         }, () -> {
@@ -97,29 +75,26 @@ public final class ZaFridaProjectManager {
         }, null);
     }
 
-    /**
-     * 列出当前工作区中的所有项目。
-     * synchronized 确保线程安全。
-     * @return 项目列表
-     */
     public synchronized @NotNull List<ZaFridaFridaProject> listProjects() {
         return new ArrayList<>(byName.values());
     }
 
-    /**
-     * 获取当前激活的项目。
-     * synchronized 确保线程安全。
-     * @return 当前激活的项目，若无则返回 null
-     */
+    public void listPythonEnvironmentPathsAsync(@NotNull Consumer<List<String>> uiConsumer,
+                                                @Nullable ModalityState modality) {
+        AtomicReference<List<String>> ref = new AtomicReference<>();
+        runConfigTask(() -> ref.set(listPythonEnvironmentPathsInternal()),
+                () -> uiConsumer.accept(ref.get()),
+                modality);
+    }
+
     public synchronized @Nullable ZaFridaFridaProject getActiveProject() {
         return active;
     }
 
-    /**
-     * 根据目录查找对应的项目。
-     * @param dir 目标目录
-     * @return 对应的项目，若不存在则返回 null
-     */
+    public synchronized @NotNull String getActivePythonEnvironmentPath() {
+        return activePythonEnvironmentPath;
+    }
+
     public void findProjectByDirAsync(@NotNull VirtualFile dir, @NotNull Consumer<ZaFridaFridaProject> uiConsumer) {
         AtomicReference<ZaFridaFridaProject> ref = new AtomicReference<>();
         runConfigTask(() -> ref.set(findProjectByDirInternal(dir)), () -> uiConsumer.accept(ref.get()), null);
@@ -140,12 +115,6 @@ public final class ZaFridaProjectManager {
         return null;
     }
 
-    /**
-     * 注册一个已存在的项目目录。
-     * @param dir 目标目录
-     * @param activate 是否激活该项目
-     * @return 注册的项目实例，若目录无效则返回 null
-     */
     public void registerExistingProjectAsync(@NotNull VirtualFile dir,
                                              boolean activate,
                                              @NotNull Consumer<ZaFridaFridaProject> uiConsumer) {
@@ -160,13 +129,11 @@ public final class ZaFridaProjectManager {
     }
 
     private @Nullable ZaFridaFridaProject registerExistingProjectInternal(@NotNull VirtualFile dir, boolean activate) {
-        // 计算相对路径
         String rel = toRelativeDirInternal(dir);
         if (rel == null) {
             return null;
         }
 
-        // 读取项目配置
         ZaFridaProjectConfig cfg = storage.loadProjectConfig(project, dir);
         String name;
         if (ZaStrUtil.isBlank(cfg.name)) {
@@ -186,6 +153,16 @@ public final class ZaFridaProjectManager {
                 }
             }
             if (target == null) {
+                ZaFridaFridaProject sameName = byName.get(name);
+                if (sameName != null) {
+                    LOG.warn(String.format(
+                            "Cannot register ZAFrida project '%s' from %s; the name is already used by %s",
+                            name,
+                            rel,
+                            sameName.getRelativeDir()
+                    ));
+                    return null;
+                }
                 target = new ZaFridaFridaProject(name, platform, rel);
                 byName.put(target.getName(), target);
                 ZaFridaFridaProject finalTarget = target;
@@ -195,22 +172,15 @@ public final class ZaFridaProjectManager {
             }
         }
 
-        // 保存 workspace（若新增且不激活）
         if (added && !activate) {
             storage.saveWorkspace(project, workspace);
         }
-        // 激活项目（若需要）
         if (activate && target != null) {
             setActiveProjectInternal(target);
         }
         return target;
     }
 
-    /**
-     * 设置当前激活的项目。
-     * synchronized 确保线程安全。
-     * @param p 要激活的项目，若为 null 则表示无激活项目
-     */
     public void setActiveProjectAsync(@Nullable ZaFridaFridaProject p) {
         setActiveProjectAsync(p, null);
     }
@@ -226,8 +196,10 @@ public final class ZaFridaProjectManager {
     }
 
     private void setActiveProjectInternal(@Nullable ZaFridaFridaProject p) {
+        String pythonEnvironmentPath = loadPythonEnvironmentPathInternal(p);
         synchronized (this) {
             active = p;
+            activePythonEnvironmentPath = pythonEnvironmentPath;
             if (p == null) {
                 workspace.lastSelected = null;
             } else {
@@ -237,24 +209,12 @@ public final class ZaFridaProjectManager {
         storage.saveWorkspace(project, workspace);
     }
 
-    /**
-     * 创建并激活一个新项目。
-     * @param name 项目名称
-     * @param platform 目标平台
-     * @return 创建并激活的项目实例
-     */
     public void createAndActivateAsync(@NotNull String name,
                                        @NotNull ZaFridaPlatform platform,
                                        @NotNull Consumer<ZaFridaFridaProject> uiConsumer,
                                        @NotNull Consumer<Throwable> errorConsumer) {
         AtomicReference<ZaFridaFridaProject> ref = new AtomicReference<>();
-        runConfigTask(() -> {
-            try {
-                ref.set(createAndActivateInternal(name, platform));
-            } catch (Throwable t) {
-                throw t;
-            }
-        }, () -> {
+        runConfigTask(() -> ref.set(createAndActivateInternal(name, platform)), () -> {
             ZaFridaFridaProject created = ref.get();
             if (created == null) {
                 errorConsumer.accept(new IllegalStateException("Create project failed"));
@@ -266,23 +226,27 @@ public final class ZaFridaProjectManager {
     }
 
     private @NotNull ZaFridaFridaProject createAndActivateInternal(@NotNull String name, @NotNull ZaFridaPlatform platform) {
-        // 处理掉名称中的非法字符
         String safeName = sanitizeName(name);
-        // 获取IntelliJ/PyCharm IDE使用该插件的项目目录
-        VirtualFile base = project.getBaseDir();
-        // 确保项目目录存在(这个几乎不可能为空)
+        VirtualFile base = ProjectUtil.guessProjectDir(project);
         if (base == null) {
             throw new IllegalStateException("No project base dir");
         }
 
-        // 构造相对目录路径
         String rootFolder = platform.rootFolderName();
         String relDir = String.format("%s/%s", rootFolder, safeName);
 
-        // 先构造对象（不触发写）
+        synchronized (this) {
+            if (byName.containsKey(safeName)) {
+                throw new IllegalStateException(String.format("ZAFrida project already exists: %s", safeName));
+            }
+        }
+        VirtualFile existingDirectory = base.findFileByRelativePath(relDir);
+        if (existingDirectory != null) {
+            throw new IllegalStateException(String.format("Project directory already exists: %s", existingDirectory.getPath()));
+        }
+
         ZaFridaFridaProject fp = new ZaFridaFridaProject(safeName, platform, relDir);
 
-        // 写操作：创建目录、写 project config、写默认脚本、写 workspace 文件
         com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project, () -> {
             VirtualFile projectDir = null;
             try {
@@ -291,7 +255,6 @@ public final class ZaFridaProjectManager {
                 throw new RuntimeException(e);
             }
 
-            // 1) project config(项目的一些默认配置)
             ZaFridaProjectConfig cfg = new ZaFridaProjectConfig();
             cfg.name = safeName;
             cfg.platform = platform;
@@ -304,24 +267,21 @@ public final class ZaFridaProjectManager {
             cfg.spawnMode = true;
             cfg.extraArgs = "";
 
-            // 这里不要再内部再套 WriteCommandAction（避免嵌套）
+            // 当前已持有 write action，以下存储方法不得再次嵌套写操作。
             storage.saveProjectConfigNoWriteAction(projectDir, cfg);
 
-            // 2) default script
             ensureFileNoWriteAction(projectDir, cfg.mainScript, defaultAgentSkeleton());
 
-            // 3) 更新 workspace in-memory + 写 workspace 文件
             synchronized (this) {
                 byName.put(fp.getName(), fp);
                 workspace.projects.removeIf(x -> x.getName().equals(fp.getName()));
                 workspace.projects.add(fp);
                 workspace.lastSelected = fp.getName();
                 active = fp;
+                activePythonEnvironmentPath = "";
             }
             storage.saveWorkspaceNoWriteAction(base, workspace);
 
-            // refresh vfs
-            // 刷新虚拟文件系统
             projectDir.refresh(false, true);
             base.refresh(false, true);
         });
@@ -330,11 +290,6 @@ public final class ZaFridaProjectManager {
     }
 
 
-    /**
-     * 加载指定项目的配置。
-     * @param p 目标项目
-     * @param uiConsumer UI 线程回调
-     */
     public void loadProjectConfigAsync(@NotNull ZaFridaFridaProject p,
                                        @NotNull Consumer<ZaFridaProjectConfig> uiConsumer) {
         loadProjectConfigAsync(p, uiConsumer, null);
@@ -347,11 +302,6 @@ public final class ZaFridaProjectManager {
         runConfigTask(() -> ref.set(loadProjectConfigInternal(p)), () -> uiConsumer.accept(ref.get()), modality);
     }
 
-    /**
-     * 加载 UI 侧需要的项目快照（配置 + 目录 + 脚本文件）。
-     * @param p 目标项目
-     * @param uiConsumer UI 线程回调
-     */
     public void loadProjectUiStateAsync(@NotNull ZaFridaFridaProject p,
                                         @NotNull Consumer<ProjectUiState> uiConsumer) {
         loadProjectUiStateAsync(p, uiConsumer, null);
@@ -364,11 +314,6 @@ public final class ZaFridaProjectManager {
         runConfigTask(() -> ref.set(loadProjectUiStateInternal(p)), () -> uiConsumer.accept(ref.get()), modality);
     }
 
-    /**
-     * 更新指定项目的配置（后台线程）。
-     * @param p 目标项目
-     * @param mutator 用于修改配置的函数
-     */
     public void updateProjectConfigAsync(@NotNull ZaFridaFridaProject p,
                                          @NotNull Consumer<ZaFridaProjectConfig> mutator) {
         updateProjectConfigAsync(p, mutator, null);
@@ -380,11 +325,13 @@ public final class ZaFridaProjectManager {
         runConfigTask(() -> updateProjectConfigInternal(p, mutator), uiAfter, null);
     }
 
-    /**
-     * 更新主脚本路径（后台线程，内部转换为相对路径）。
-     * @param p 目标项目
-     * @param file 脚本文件
-     */
+    public void updateProjectConfigAsync(@NotNull ZaFridaFridaProject p,
+                                         @NotNull Consumer<ZaFridaProjectConfig> mutator,
+                                         @Nullable Runnable uiAfter,
+                                         @NotNull Consumer<Throwable> errorConsumer) {
+        runConfigTask(() -> updateProjectConfigInternal(p, mutator), uiAfter, null, errorConsumer);
+    }
+
     public void updateMainScriptPathAsync(@NotNull ZaFridaFridaProject p, @NotNull VirtualFile file) {
         updateProjectConfigAsync(p, cfg -> {
             String rel = toProjectRelativePathInternal(p, file);
@@ -394,11 +341,6 @@ public final class ZaFridaProjectManager {
         });
     }
 
-    /**
-     * 更新附加脚本路径（后台线程，内部转换为相对路径）。
-     * @param p 目标项目
-     * @param file 脚本文件
-     */
     public void updateAttachScriptPathAsync(@NotNull ZaFridaFridaProject p, @NotNull VirtualFile file) {
         updateProjectConfigAsync(p, cfg -> {
             String rel = toProjectRelativePathInternal(p, file);
@@ -408,13 +350,6 @@ public final class ZaFridaProjectManager {
         });
     }
 
-    /**
-     * 解析 Run 脚本（后台线程）。
-     * @param p 目标项目
-     * @param targetId 目标标识
-     * @param gadgetMode 是否为 Gadget 模式
-     * @param uiConsumer UI 线程回调
-     */
     public void resolveRunScriptFileAsync(@NotNull ZaFridaFridaProject p,
                                           @NotNull String targetId,
                                           boolean gadgetMode,
@@ -425,23 +360,12 @@ public final class ZaFridaProjectManager {
                 null);
     }
 
-    /**
-     * 解析 Attach 脚本（后台线程）。
-     * @param p 目标项目
-     * @param uiConsumer UI 线程回调
-     */
     public void resolveAttachScriptFileAsync(@NotNull ZaFridaFridaProject p,
                                              @NotNull Consumer<VirtualFile> uiConsumer) {
         AtomicReference<VirtualFile> ref = new AtomicReference<>();
         runConfigTask(() -> ref.set(resolveAttachScriptFileInternal(p)), () -> uiConsumer.accept(ref.get()), null);
     }
 
-    /**
-     * 确保 Run 主脚本存在并可用（后台线程）。
-     * @param p 目标项目
-     * @param targetId 目标标识
-     * @param uiConsumer UI 线程回调
-     */
     public void ensureMainScriptForTargetAsync(@NotNull ZaFridaFridaProject p,
                                                @NotNull String targetId,
                                                @NotNull Consumer<VirtualFile> uiConsumer) {
@@ -451,26 +375,15 @@ public final class ZaFridaProjectManager {
                 null);
     }
 
-    /**
-     * 自动补全默认主脚本（后台线程）。
-     * @param p 目标项目
-     * @param uiAfter UI 线程回调
-     */
     public void ensureDefaultMainScriptAsync(@NotNull ZaFridaFridaProject p, @Nullable Runnable uiAfter) {
         runConfigTask(() -> ensureDefaultMainScriptInternal(p), uiAfter, null);
     }
 
-    /**
-     * 解析项目的实际目录（后台线程）。
-     * @param p 目标项目
-     * @param uiConsumer UI 线程回调
-     */
     public void resolveProjectDirAsync(@NotNull ZaFridaFridaProject p, @NotNull Consumer<VirtualFile> uiConsumer) {
         AtomicReference<VirtualFile> ref = new AtomicReference<>();
         runConfigTask(() -> ref.set(resolveProjectDirInternal(p)), () -> uiConsumer.accept(ref.get()), null);
     }
 
-    /** UI 侧需要的项目快照。 */
     public static final class ProjectUiState {
         private final @NotNull ZaFridaProjectConfig config;
         private final @Nullable VirtualFile projectDir;
@@ -515,6 +428,7 @@ public final class ZaFridaProjectManager {
         ZaFridaProjectConfig c = storage.loadProjectConfig(project, dir);
         c.name = p.getName();
         c.platform = p.getPlatform();
+        updateCachedPythonEnvironmentPath(p, c.pythonEnvironmentPath);
         return c;
     }
 
@@ -551,10 +465,56 @@ public final class ZaFridaProjectManager {
         cfg.name = p.getName();
         cfg.platform = p.getPlatform();
         storage.saveProjectConfig(project, dir, cfg);
+        updateCachedPythonEnvironmentPath(p, cfg.pythonEnvironmentPath);
+    }
+
+    private @NotNull String loadPythonEnvironmentPathInternal(@Nullable ZaFridaFridaProject fridaProject) {
+        if (fridaProject == null) {
+            return "";
+        }
+        VirtualFile dir = resolveProjectDirInternal(fridaProject);
+        if (dir == null) {
+            return "";
+        }
+        ZaFridaProjectConfig config = storage.loadProjectConfig(project, dir);
+        return normalizePythonEnvironmentPath(config.pythonEnvironmentPath);
+    }
+
+    private @NotNull List<String> listPythonEnvironmentPathsInternal() {
+        LinkedHashSet<String> paths = new LinkedHashSet<>();
+        List<ZaFridaFridaProject> projects = listProjects();
+        for (ZaFridaFridaProject fridaProject : projects) {
+            VirtualFile dir = resolveProjectDirInternal(fridaProject);
+            if (dir == null) {
+                continue;
+            }
+            ZaFridaProjectConfig config = storage.loadProjectConfig(project, dir);
+            String path = normalizePythonEnvironmentPath(config.pythonEnvironmentPath);
+            if (!path.isEmpty()) {
+                paths.add(path);
+            }
+        }
+        return new ArrayList<>(paths);
+    }
+
+    private void updateCachedPythonEnvironmentPath(@NotNull ZaFridaFridaProject fridaProject,
+                                                   @Nullable String pythonEnvironmentPath) {
+        synchronized (this) {
+            if (fridaProject.equals(active)) {
+                activePythonEnvironmentPath = normalizePythonEnvironmentPath(pythonEnvironmentPath);
+            }
+        }
+    }
+
+    private static @NotNull String normalizePythonEnvironmentPath(@Nullable String path) {
+        if (ZaStrUtil.isBlank(path)) {
+            return "";
+        }
+        return path.trim();
     }
 
     private @Nullable VirtualFile resolveProjectDirInternal(@NotNull ZaFridaFridaProject p) {
-        VirtualFile base = project.getBaseDir();
+        VirtualFile base = ProjectUtil.guessProjectDir(project);
         if (base == null) {
             return null;
         }
@@ -654,7 +614,8 @@ public final class ZaFridaProjectManager {
 
         Arrays.sort(children, Comparator.comparing(VirtualFile::getName, String.CASE_INSENSITIVE_ORDER));
         for (VirtualFile child : children) {
-            if (!child.isDirectory() && "js".equalsIgnoreCase(child.getExtension())) {
+            if (!child.isDirectory()
+                    && ("js".equalsIgnoreCase(child.getExtension()) || "ts".equalsIgnoreCase(child.getExtension()))) {
                 return child.getName();
             }
         }
@@ -675,12 +636,13 @@ public final class ZaFridaProjectManager {
             try {
                 ioTask.run();
             } catch (Throwable t) {
+                LOG.warn("ZAFrida project configuration task failed", t);
                 if (errorConsumer != null) {
                     ApplicationManager.getApplication().invokeLater(() -> {
                         if (!project.isDisposed()) {
                             errorConsumer.accept(t);
                         }
-                    }, ModalityState.NON_MODAL);
+                    }, ModalityState.nonModal());
                 }
                 return;
             }
@@ -691,7 +653,7 @@ public final class ZaFridaProjectManager {
             if (modality != null) {
                 state = modality;
             } else {
-                state = ModalityState.NON_MODAL;
+                state = ModalityState.nonModal();
             }
             ApplicationManager.getApplication().invokeLater(() -> {
                 if (!project.isDisposed()) {
@@ -701,9 +663,7 @@ public final class ZaFridaProjectManager {
         });
     }
 
-    /**
-     * 配置读写的串行队列，使用原子状态保证顺序与互斥。
-     */
+    /** 原子状态只允许一个 worker，保证配置读改写按提交顺序串行执行。 */
     private static final class ConfigTaskQueue {
         private final Project project;
         private final AtomicBoolean running = new AtomicBoolean(false);
@@ -746,12 +706,6 @@ public final class ZaFridaProjectManager {
         }
     }
 
-    /** 创建文件（无写操作版本）。
-     * 这个版本用于在已有写操作的上下文中调用，避免嵌套写操作。
-     * @param dir 目标目录
-     * @param name 文件名
-     * @param content 文件内容
-     */
     private static void ensureFileNoWriteAction(@NotNull VirtualFile dir, @NotNull String name, @NotNull String content) {
         try {
             VirtualFile f = dir.findChild(name);
@@ -759,14 +713,12 @@ public final class ZaFridaProjectManager {
                 f = dir.createChildData(ZaFridaProjectManager.class, name);
                 VfsUtil.saveText(f, content);
             }
-        } catch (Throwable ignore) {}
+        } catch (IOException e) {
+            throw new IllegalStateException(String.format("Create ZAFrida script failed: %s/%s", dir.getPath(), name), e);
+        }
     }
 
 
-    /**
-     * 包名末段生成默认主脚本：com.su.fridatest -> fridatest.js
-     * 若当前 mainScript 还是默认 agent.js，则升级为该名称（不覆盖用户自定义主脚本）
-     */
     private @NotNull VirtualFile ensureMainScriptForTargetInternal(@NotNull ZaFridaFridaProject p,
                                                                    @NotNull String targetId) {
         VirtualFile dir = resolveProjectDirInternal(p);
@@ -807,8 +759,6 @@ public final class ZaFridaProjectManager {
             return vf;
         }
 
-        // fallback
-        // 回退处理
         ensureFile(dir, defaultMain, defaultAgentSkeleton());
         VirtualFile fallback = dir.findChild(defaultMain);
         if (fallback != null) {
@@ -818,39 +768,27 @@ public final class ZaFridaProjectManager {
         return Objects.requireNonNull(dir.findChild(ZaFridaProjectFiles.DEFAULT_MAIN_SCRIPT));
     }
 
-    // ---------------- utils ----------------
-
-    /**
-     * 清理项目名称，移除非法文件名字符。
-     * @param name
-     * @return String
-     */
     private static String sanitizeName(String name) {
         String s = name.trim();
+        if (".".equals(s) || "..".equals(s)) {
+            throw new IllegalArgumentException("ZAFrida project name cannot be '.' or '..'");
+        }
         s = s.replaceAll("[\\\\/:*?\"<>|]", "_");
-        if (s.isEmpty()) s = "ZAFridaProject";
+        if (s.isEmpty()) {
+            s = "ZAFridaProject";
+        }
         return s;
     }
 
-    /**
-     * 提取目标标识的末段作为脚本命名参考。
-     * 例如：com.example.app -> app
-     * @param target 目标标识
-     * @return 末段字符串
-     */
     private static String targetLeaf(String target) {
         String t = target.trim();
         int idx = t.lastIndexOf('.');
-        if (idx >= 0 && idx + 1 < t.length()) return t.substring(idx + 1);
+        if (idx >= 0 && idx + 1 < t.length()) {
+            return t.substring(idx + 1);
+        }
         return t;
     }
 
-    /** 创建文件（有写操作版本）。
-     * 这个版本会在内部执行写操作。
-     * @param dir 目标目录
-     * @param name 文件名
-     * @param content 文件内容
-     */
     private static void ensureFile(VirtualFile dir, String name, String content) {
         try {
             VirtualFile f = dir.findChild(name);
@@ -858,15 +796,13 @@ public final class ZaFridaProjectManager {
                 f = dir.createChildData(ZaFridaProjectManager.class, name);
                 VfsUtil.saveText(f, content);
             }
-        } catch (Throwable ignore) {}
+        } catch (IOException e) {
+            throw new IllegalStateException(String.format("Create ZAFrida script failed: %s/%s", dir.getPath(), name), e);
+        }
     }
 
-    /** 将目录转换为相对于项目根目录的路径。
-     * @param dir 目标目录
-     * @return 相对路径字符串，若无法解析则返回 null
-     */
     private @Nullable String toRelativeDirInternal(@NotNull VirtualFile dir) {
-        VirtualFile base = project.getBaseDir();
+        VirtualFile base = ProjectUtil.guessProjectDir(project);
         if (base == null) {
             return null;
         }
@@ -877,19 +813,17 @@ public final class ZaFridaProjectManager {
         return rel;
     }
 
-    /** 根据相对目录推断平台类型。
-     * @param relativeDir 相对目录
-     * @param fallback 回退平台
-     * @return 推断的平台类型
-     */
     private static @NotNull ZaFridaPlatform inferPlatform(@NotNull String relativeDir, @NotNull ZaFridaPlatform fallback) {
         String rel = relativeDir.replace('\\', '/');
-        if (rel.equals("ios") || rel.startsWith("ios/")) return ZaFridaPlatform.IOS;
-        if (rel.equals("android") || rel.startsWith("android/")) return ZaFridaPlatform.ANDROID;
+        if (rel.equals("ios") || rel.startsWith("ios/")) {
+            return ZaFridaPlatform.IOS;
+        }
+        if (rel.equals("android") || rel.startsWith("android/")) {
+            return ZaFridaPlatform.ANDROID;
+        }
         return fallback;
     }
 
-    /** 默认 Agent 脚本骨架。 */
     private static String defaultAgentSkeleton() {
         return """
                 // ZAFrida default agent

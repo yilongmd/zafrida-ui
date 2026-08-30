@@ -13,32 +13,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/**
- * [Service] ADB 命令封装服务。
- * <p>
- * <strong>职责：</strong>
- * 1. 统一构建 adb 命令行（端口转发、强制停止、启动应用）。
- * 2. 在后台线程执行命令，并在 EDT 回调结果。
- * <p>
- * <strong>约束：</strong>
- * 仅负责命令与执行，不做 UI 交互；调用方负责提示与状态更新。
- */
 public final class AdbService {
 
     private static final int DEFAULT_TIMEOUT_MS = 10_000;
 
-    /**
-     * 执行 adb forward 端口转发并回调结果。
-     * @param port 端口号
-     * @param info 信息日志
-     * @param warn 警告日志
-     * @param onDone 操作完成回调
-     */
     public void forwardTcp(int port,
+                           @Nullable String deviceId,
                            @NotNull Consumer<String> info,
                            @NotNull Consumer<String> warn,
                            @NotNull Runnable onDone) {
-        GeneralCommandLine cmd = buildForwardCommand(port);
+        GeneralCommandLine cmd = buildForwardCommand(port, deviceId);
         info.accept(String.format("[ZAFrida] ADB forward: %s", cmd.getCommandLineString()));
 
         runAsync(cmd, result -> {
@@ -60,13 +44,6 @@ public final class AdbService {
         });
     }
 
-    /**
-     * 通过 adb shell am force-stop 强制停止应用。
-     * @param packageName 包名
-     * @param deviceId 设备 ID（可为空）
-     * @param info 信息日志
-     * @param error 错误日志
-     */
     public void forceStop(@NotNull String packageName,
                           @Nullable String deviceId,
                           @NotNull Consumer<String> info,
@@ -81,20 +58,18 @@ public final class AdbService {
                     info.accept(result.stdout);
                 }
             } else {
-                String detail = ZaStrUtil.isNotBlank(result.stderr) ? result.stderr : result.stdout;
-                if (ZaStrUtil.isBlank(detail)) detail = "unknown error";
+                String detail = result.stdout;
+                if (ZaStrUtil.isNotBlank(result.stderr)) {
+                    detail = result.stderr;
+                }
+                if (ZaStrUtil.isBlank(detail)) {
+                    detail = "unknown error";
+                }
                 error.accept(String.format("[ZAFrida] Force stop failed (exit=%s): %s", result.exitCode, detail));
             }
         }, throwable -> error.accept(String.format("[ZAFrida] Force stop failed: %s", throwable.getMessage())));
     }
 
-    /**
-     * 通过 adb shell monkey 启动应用。
-     * @param packageName 包名
-     * @param deviceId 设备 ID（可为空）
-     * @param info 信息日志
-     * @param error 错误日志
-     */
     public void openApp(@NotNull String packageName,
                         @Nullable String deviceId,
                         @NotNull Consumer<String> info,
@@ -109,23 +84,28 @@ public final class AdbService {
                     info.accept(result.stdout);
                 }
             } else {
-                String detail = ZaStrUtil.isNotBlank(result.stderr) ? result.stderr : result.stdout;
-                if (ZaStrUtil.isBlank(detail)) detail = "unknown error";
+                String detail = result.stdout;
+                if (ZaStrUtil.isNotBlank(result.stderr)) {
+                    detail = result.stderr;
+                }
+                if (ZaStrUtil.isBlank(detail)) {
+                    detail = "unknown error";
+                }
                 error.accept(String.format("[ZAFrida] Open app failed (exit=%s): %s", result.exitCode, detail));
             }
         }, throwable -> error.accept(String.format("[ZAFrida] Open app failed: %s", throwable.getMessage())));
     }
 
-    private static @NotNull GeneralCommandLine buildForwardCommand(int port) {
+    private static @NotNull GeneralCommandLine buildForwardCommand(int port, @Nullable String deviceId) {
         String tcp = String.format("tcp:%s", port);
-        return new GeneralCommandLine("adb", "forward", tcp, tcp)
+        List<String> args = baseAdbArgs(deviceId);
+        args.add("forward");
+        args.add(tcp);
+        args.add(tcp);
+        return new GeneralCommandLine(args)
                 .withCharset(StandardCharsets.UTF_8);
     }
 
-    /**
-     * 构建 adb version 命令行，用于可用性检查。
-     * @return GeneralCommandLine
-     */
     public @NotNull GeneralCommandLine buildVersionCommandLine() {
         return new GeneralCommandLine("adb", "version")
                 .withCharset(StandardCharsets.UTF_8);
@@ -194,6 +174,9 @@ public final class AdbService {
     }
 
     private static @NotNull String trim(@Nullable String value) {
-        return value == null ? "" : value.trim();
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
     }
 }

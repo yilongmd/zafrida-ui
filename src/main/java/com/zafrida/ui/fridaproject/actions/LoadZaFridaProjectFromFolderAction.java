@@ -14,27 +14,14 @@ import com.intellij.psi.PsiDirectory;
 import com.zafrida.ui.fridaproject.ZaFridaProjectFiles;
 import com.zafrida.ui.fridaproject.ZaFridaProjectManager;
 import com.zafrida.ui.util.ZaFridaNotifier;
-/**
- * [Action] 从文件夹加载现有项目。
- * [IntelliJ/PyCharm ProjectView右键菜单]
- * <p>
- * <strong>场景：</strong>
- * 当用户手动复制了一个项目文件夹，或者在另一台机器上打开 IDE 时，
- * 通过右键点击文件夹将其“导入”并注册到 {@code zafrida-workspace.xml} 中。
- */
+
 public final class LoadZaFridaProjectFromFolderAction extends AnAction {
 
-    /**
-     * 菜单可用性更新逻辑
-     * 通过 IDE_VIEW 获取（ProjectView 右键菜单最可靠的方式）
-     * 使用过其他的方式, 发现很多时候获取不到正确的 VirtualFile
-     * @param e
-     */
     @Override
     public void update(AnActionEvent e) {
         VirtualFile vf = null;
 
-        // 方法1：通过 IDE_VIEW 获取（ProjectView 右键菜单最可靠的方式）
+        // Project View 下 IDE_VIEW 比 VIRTUAL_FILE 更稳定。
         IdeView ideView = e.getData(LangDataKeys.IDE_VIEW);
         if (ideView != null) {
             PsiDirectory[] dirs = ideView.getDirectories();
@@ -43,7 +30,6 @@ public final class LoadZaFridaProjectFromFolderAction extends AnAction {
             }
         }
 
-        // 方法2：fallback
         if (vf == null) {
             vf = e.getData(CommonDataKeys.VIRTUAL_FILE);
         }
@@ -59,10 +45,6 @@ public final class LoadZaFridaProjectFromFolderAction extends AnAction {
         e.getPresentation().setEnabled(isDir);
     }
 
-    /**
-     * 菜单执行逻辑
-     * @param e
-     */
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();

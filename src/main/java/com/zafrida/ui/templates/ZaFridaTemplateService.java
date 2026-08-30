@@ -13,61 +13,32 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
-/**
- * [核心服务] 模板文件系统管理器。
- * <p>
- * <strong>职责：</strong>
- * 1. <strong>初始化：</strong> 首次启动时将内置资源 (Resources) 中的模板释放到模板根目录（系统目录或 IDE 根目录）。
- * 2. <strong>CRUD：</strong> 提供对 {@code custom/} 目录下自定义模板的增删改查 API。
- * 3. <strong>加载：</strong> 扫描磁盘文件并构建内存中的 {@link ZaFridaTemplate} 列表供 UI 展示。
- */
+
 public class ZaFridaTemplateService {
 
-    /** 日志记录器 */
     private static final Logger LOG = Logger.getInstance(ZaFridaTemplateService.class);
 
-    /** 内置模板资源根路径 */
     private static final String TEMPLATES_RESOURCE_PATH = "/templates";
-    /** ZAFRIDA 根目录名 */
     private static final String ZAFRIDA_DIR_NAME = ".zafrida";
-    /** 模板目录名 */
     private static final String TEMPLATES_DIR_NAME = "templates";
-    /** 自定义模板目录名 */
     private static final String CUSTOM_DIR = "custom";
-    /** Android 模板目录名 */
     private static final String ANDROID_DIR = "android";
-    /** iOS 模板目录名 */
     private static final String IOS_DIR = "ios";
 
-    /** 当前 IDE 项目 */
     private final @NotNull Project project;
-    /** 模板根目录（系统目录或 IDE 根目录） */
     private @NotNull Path userTemplatesRoot;
 
-    /** 模板缓存列表 */
     private final List<ZaFridaTemplate> cachedTemplates = new ArrayList<>();
-    /** 强制覆盖内置模板开关（开发调试用） */
     private static final boolean FORCE_OVERWRITE_BUILTIN = true;
+    private boolean initialized;
 
-    /**
-     * 构造函数。
-     * @param project 当前 IDE 项目
-     */
     public ZaFridaTemplateService(@NotNull Project project) {
         this.project = project;
-
-        // 模板根目录：系统目录(~/.zafrida/templates) 或 IDE 根目录
         this.userTemplatesRoot = resolveTemplatesRoot();
-
-        initializeTemplates();
-        reload();
+        this.initialized = false;
     }
 
-    /**
-     * 解析模板根目录（系统目录或 IDE 根目录）。
-     */
     private @NotNull Path resolveTemplatesRoot() {
         ZaFridaSettingsService settingsService = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
         ZaFridaSettingsState state = settingsService.getState();
@@ -86,9 +57,6 @@ public class ZaFridaTemplateService {
         return resolveSystemTemplatesRoot();
     }
 
-    /**
-     * 解析系统目录下的模板根目录。
-     */
     private @NotNull Path resolveSystemTemplatesRoot() {
         String userHome = System.getProperty("user.home");
         if (userHome == null || userHome.trim().isEmpty()) {
@@ -97,9 +65,6 @@ public class ZaFridaTemplateService {
         return Paths.get(userHome, ZAFRIDA_DIR_NAME, TEMPLATES_DIR_NAME);
     }
 
-    /**
-     * 解析 IDE 根目录下的模板根目录。
-     */
     private @Nullable Path resolveProjectTemplatesRoot() {
         String basePath = project.getBasePath();
         if (basePath == null || basePath.trim().isEmpty()) {
@@ -108,28 +73,20 @@ public class ZaFridaTemplateService {
         return Paths.get(basePath, ZAFRIDA_DIR_NAME, TEMPLATES_DIR_NAME);
     }
 
-    /**
-     * 确保模板根目录与当前设置保持一致。
-     */
     private void ensureTemplatesRoot() {
         Path resolved = resolveTemplatesRoot();
         if (!resolved.equals(userTemplatesRoot)) {
             userTemplatesRoot = resolved;
-            initializeTemplates();
+            initialized = false;
         }
     }
 
-    /**
-     * 初始化模板目录，将内置模板复制到模板根目录。
-     */
     private void initializeTemplates() {
         try {
-            // 创建目录结构
             Files.createDirectories(userTemplatesRoot.resolve(ANDROID_DIR));
             Files.createDirectories(userTemplatesRoot.resolve(IOS_DIR));
             Files.createDirectories(userTemplatesRoot.resolve(CUSTOM_DIR));
 
-            // 复制内置模板
             copyBuiltInTemplates(ANDROID_DIR);
             copyBuiltInTemplates(IOS_DIR);
 
@@ -139,9 +96,6 @@ public class ZaFridaTemplateService {
         }
     }
 
-    /**
-     * 复制内置模板到用户目录
-     */
     private void copyBuiltInTemplates(String platform) {
         String resourcePath = String.format("%s/%s", TEMPLATES_RESOURCE_PATH, platform);
         Path targetDir = userTemplatesRoot.resolve(platform);
@@ -150,11 +104,12 @@ public class ZaFridaTemplateService {
             List<String> templateFiles = listResourceFiles(resourcePath);
 
             for (String fileName : templateFiles) {
-                if (!fileName.endsWith(".js")) continue;
+                if (!fileName.endsWith(".js")) {
+                    continue;
+                }
 
                 Path targetFile = targetDir.resolve(fileName);
 
-                // 根据开关决定是否覆盖
                 if (FORCE_OVERWRITE_BUILTIN || !Files.exists(targetFile)) {
                     String content = readResourceFile(String.format("%s/%s", resourcePath, fileName));
                     if (content != null) {
@@ -174,9 +129,6 @@ public class ZaFridaTemplateService {
         }
     }
 
-    /**
-     * 列出资源目录中的文件（自动扫描，无需硬编码）
-     */
     private List<String> listResourceFiles(String resourcePath) {
         List<String> files = new ArrayList<>();
 
@@ -188,10 +140,12 @@ public class ZaFridaTemplateService {
             }
 
             if (resourceUrl.getProtocol().equals("jar")) {
-                // 从 JAR 文件中读取
                 String jarPath = resourceUrl.getPath().substring(5, resourceUrl.getPath().indexOf("!"));
                 try (java.util.jar.JarFile jar = new java.util.jar.JarFile(java.net.URLDecoder.decode(jarPath, StandardCharsets.UTF_8))) {
-                    String prefix = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
+                    String prefix = resourcePath;
+                    if (resourcePath.startsWith("/")) {
+                        prefix = resourcePath.substring(1);
+                    }
                     if (!prefix.endsWith("/")) {
                         prefix = String.format("%s/", prefix);
                     }
@@ -203,13 +157,12 @@ public class ZaFridaTemplateService {
                             .filter(entry -> entry.getName().endsWith(".js"))
                             .forEach(entry -> {
                                 String name = entry.getName().substring(finalPrefix.length());
-                                if (!name.contains("/")) { // 只取当前目录下的文件
+                                if (!name.contains("/")) {
                                     files.add(name);
                                 }
                             });
                 }
             } else {
-                // 从文件系统读取（开发环境）
                 Path path = Paths.get(resourceUrl.toURI());
                 try (Stream<Path> stream = Files.list(path)) {
                     stream.filter(p -> p.toString().endsWith(".js"))
@@ -223,9 +176,6 @@ public class ZaFridaTemplateService {
         return files;
     }
 
-    /**
-     * 读取资源文件内容
-     */
     @Nullable
     private String readResourceFile(String resourcePath) {
         try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
@@ -240,30 +190,27 @@ public class ZaFridaTemplateService {
         }
     }
 
-    /**
-     * 重新加载所有模板
-     */
-    public void reload() {
+    public synchronized void reload() {
         ensureTemplatesRoot();
+        if (!initialized) {
+            initializeTemplates();
+            initialized = Files.isDirectory(userTemplatesRoot.resolve(ANDROID_DIR))
+                    && Files.isDirectory(userTemplatesRoot.resolve(IOS_DIR))
+                    && Files.isDirectory(userTemplatesRoot.resolve(CUSTOM_DIR));
+        }
         cachedTemplates.clear();
 
-        // 加载 Android 模板
         loadTemplatesFromDirectory(userTemplatesRoot.resolve(ANDROID_DIR), ZaFridaTemplateCategory.ANDROID);
-
-        // 加载 iOS 模板
         loadTemplatesFromDirectory(userTemplatesRoot.resolve(IOS_DIR), ZaFridaTemplateCategory.IOS);
-
-        // 加载自定义模板
         loadTemplatesFromDirectory(userTemplatesRoot.resolve(CUSTOM_DIR), ZaFridaTemplateCategory.CUSTOM);
 
         LOG.info(String.format("Loaded %s templates", cachedTemplates.size()));
     }
 
-    /**
-     * 从目录加载模板
-     */
     private void loadTemplatesFromDirectory(Path dir, ZaFridaTemplateCategory category) {
-        if (!Files.exists(dir)) return;
+        if (!Files.exists(dir)) {
+            return;
+        }
 
         try (Stream<Path> stream = Files.list(dir)) {
             stream.filter(p -> p.toString().endsWith(".js"))
@@ -282,16 +229,12 @@ public class ZaFridaTemplateService {
         }
     }
 
-    /**
-     * 从文件加载模板
-     */
     @Nullable
     private ZaFridaTemplate loadTemplateFromFile(Path file, ZaFridaTemplateCategory category) throws IOException {
         String content = Files.readString(file, StandardCharsets.UTF_8);
         String fileName = file.getFileName().toString();
         String id = String.format("%s_%s", category.name().toLowerCase(), fileName.replace(".js", ""));
 
-        // 解析标题和描述（从文件前两行注释中提取）
         String title = fileName.replace(".js", "").replace("_", " ");
         String description = "";
 
@@ -306,83 +249,61 @@ public class ZaFridaTemplateService {
         return new ZaFridaTemplate(id, title, description, content, category, file);
     }
 
-    /**
-     * 获取所有模板
-     */
-    public List<ZaFridaTemplate> all() {
+    public synchronized List<ZaFridaTemplate> all() {
         return new ArrayList<>(cachedTemplates);
     }
 
-    /**
-     * 按分类获取模板
-     */
-    public List<ZaFridaTemplate> byCategory(ZaFridaTemplateCategory category) {
-        return cachedTemplates.stream()
-                .filter(t -> t.getCategory() == category)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * 添加自定义模板
-     */
-    public boolean addTemplate(ZaFridaTemplateCategory category, String name, String content) {
+    public synchronized boolean addTemplate(ZaFridaTemplateCategory category, String name, String content) {
         ensureTemplatesRoot();
         if (category != ZaFridaTemplateCategory.CUSTOM) {
             LOG.warn("Can only add templates to CUSTOM category");
             return false;
         }
 
-        String fileName = String.format("%s.js", sanitizeFileName(name));
-        Path targetFile = userTemplatesRoot.resolve(CUSTOM_DIR).resolve(fileName);
+        String safeName = sanitizeFileName(name);
+        if (safeName.isEmpty()) {
+            LOG.warn("Custom template name is empty after normalization");
+            return false;
+        }
+        String fileName = String.format("%s.js", safeName);
+        Path customDirectory = userTemplatesRoot.resolve(CUSTOM_DIR);
+        Path targetFile = customDirectory.resolve(fileName);
 
         try {
-            // 确保内容以标题注释开头
+            Files.createDirectories(customDirectory);
             String finalContent = content;
             if (!content.startsWith("//")) {
                 finalContent = String.format("// %s\n// Custom template\n\n%s", name, content);
             }
 
-            Files.writeString(targetFile, finalContent, StandardCharsets.UTF_8);
+            Files.writeString(
+                    targetFile,
+                    finalContent,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE
+            );
             reload();
             return true;
+        } catch (FileAlreadyExistsException e) {
+            LOG.warn(String.format("Custom template already exists: %s", targetFile));
+            return false;
         } catch (IOException e) {
             LOG.error(String.format("Failed to add template: %s", name), e);
             return false;
         }
     }
 
-    /**
-     * 更新模板内容
-     */
-    public boolean updateTemplate(@NotNull ZaFridaTemplate template, String newContent) {
-        Path filePath = template.getFilePath();
-        if (filePath == null || !Files.exists(filePath)) {
-            LOG.warn(String.format("Template file not found: %s", template.getId()));
-            return false;
-        }
-
-        try {
-            Files.writeString(filePath, newContent, StandardCharsets.UTF_8);
-            reload();
-            return true;
-        } catch (IOException e) {
-            LOG.error(String.format("Failed to update template: %s", template.getId()), e);
-            return false;
-        }
-    }
-
-    /**
-     * 删除模板
-     */
-    public boolean deleteTemplate(@NotNull ZaFridaTemplate template) {
-        // 只允许删除自定义模板
+    public synchronized boolean deleteTemplate(@NotNull ZaFridaTemplate template) {
         if (template.getCategory() != ZaFridaTemplateCategory.CUSTOM) {
             LOG.warn("Can only delete CUSTOM templates");
             return false;
         }
 
         Path filePath = template.getFilePath();
-        if (filePath == null) return false;
+        if (filePath == null) {
+            return false;
+        }
 
         try {
             Files.deleteIfExists(filePath);
@@ -394,19 +315,12 @@ public class ZaFridaTemplateService {
         }
     }
 
-    /**
-     * 获取模板根目录路径
-     */
-    public Path getUserTemplatesRoot() {
+    public synchronized Path getUserTemplatesRoot() {
         ensureTemplatesRoot();
         return userTemplatesRoot;
     }
 
-    /**
-     * 是否使用 IDE 根目录作为模板根目录。
-     * @return true 表示模板根目录位于项目根目录下
-     */
-    public boolean isProjectTemplatesRoot() {
+    public synchronized boolean isProjectTemplatesRoot() {
         ensureTemplatesRoot();
         Path projectRoot = resolveProjectTemplatesRoot();
         if (projectRoot == null) {
@@ -415,9 +329,6 @@ public class ZaFridaTemplateService {
         return projectRoot.equals(userTemplatesRoot);
     }
 
-    /**
-     * 清理文件名
-     */
     private String sanitizeFileName(String name) {
         return name.replaceAll("[^a-zA-Z0-9_\\-]", "_").toLowerCase();
     }

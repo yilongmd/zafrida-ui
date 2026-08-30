@@ -1,7 +1,10 @@
 package com.zafrida.ui.fridaproject;
 
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectUtil;
+import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -10,34 +13,21 @@ import com.zafrida.ui.frida.FridaProcessScope;
 import com.zafrida.ui.util.ZaStrUtil;
 import org.jdom.Document;
 import org.jdom.Element;
-import org.jdom.input.SAXBuilder;
-import org.jdom.output.Format;
-import org.jdom.output.XMLOutputter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Set;
 
-/**
- * [数据层] XML 配置文件读写引擎。
- * <p>
- * 负责 {@code zafrida-workspace.xml} 和 {@code zafrida-project.xml} 的序列化与反序列化。
- * <p>
- * <strong>规范：</strong>
- * 1. 所有写操作必须在 {@link WriteCommandAction} 中执行。
- * 2. 配置读写由上层在后台线程串行调度（避免阻塞 EDT）。
- * 3. 使用 JDOM 解析 XML。
- */
 public final class ZaFridaProjectStorage {
 
-    /**
-     * 加载工作区配置。
-     * @param project 当前 IDE 项目
-     * @return 工作区配置
-     */
+    private static final Logger LOG = Logger.getInstance(ZaFridaProjectStorage.class);
+
     public @NotNull ZaFridaWorkspaceConfig loadWorkspace(@NotNull Project project) {
-        VirtualFile base = project.getBaseDir();
+        VirtualFile base = ProjectUtil.guessProjectDir(project);
         if (base == null) {
             return new ZaFridaWorkspaceConfig();
         }
@@ -48,18 +38,14 @@ public final class ZaFridaProjectStorage {
         try {
             String xml = VfsUtilCore.loadText(file);
             return parseWorkspace(xml);
-        } catch (Throwable t) {
+        } catch (Exception t) {
+            LOG.warn(String.format("Load ZAFrida workspace failed: %s", file.getPath()), t);
             return new ZaFridaWorkspaceConfig();
         }
     }
 
-    /**
-     * 保存工作区配置。
-     * @param project 当前 IDE 项目
-     * @param cfg 工作区配置
-     */
     public void saveWorkspace(@NotNull Project project, @NotNull ZaFridaWorkspaceConfig cfg) {
-        VirtualFile base = project.getBaseDir();
+        VirtualFile base = ProjectUtil.guessProjectDir(project);
         if (base == null) {
             return;
         }
@@ -70,30 +56,26 @@ public final class ZaFridaProjectStorage {
                     file = base.createChildData(this, ZaFridaProjectFiles.WORKSPACE_FILE);
                 }
                 VfsUtil.saveText(file, toWorkspaceXml(cfg));
-            } catch (Throwable ignore) {
+            } catch (Exception t) {
+                LOG.warn(String.format("Save ZAFrida workspace failed: %s", base.getPath()), t);
+                throw new IllegalStateException("Save ZAFrida workspace failed", t);
             }
         });
     }
 
-    /**
-     * 加载指定 Frida 项目的配置。
-     * @param project 当前 IDE 项目
-     * @param fridaProjectDir Frida 项目目录
-     * @return 项目配置
-     */
     public @NotNull ZaFridaProjectConfig loadProjectConfig(@NotNull Project project, @NotNull VirtualFile fridaProjectDir) {
         VirtualFile f = fridaProjectDir.findChild(ZaFridaProjectFiles.PROJECT_FILE);
         if (f == null) {
             ZaFridaProjectConfig c = new ZaFridaProjectConfig();
             c.name = fridaProjectDir.getName();
             c.mainScript = ZaFridaProjectFiles.defaultMainScriptName(c.name);
-            // platform 由目录路径推断或由 manager 传入覆盖
             return c;
         }
         try {
             String xml = VfsUtilCore.loadText(f);
             return parseProject(xml);
-        } catch (Throwable t) {
+        } catch (Exception t) {
+            LOG.warn(String.format("Load ZAFrida project config failed: %s", f.getPath()), t);
             ZaFridaProjectConfig c = new ZaFridaProjectConfig();
             c.name = fridaProjectDir.getName();
             c.mainScript = ZaFridaProjectFiles.defaultMainScriptName(c.name);
@@ -101,12 +83,6 @@ public final class ZaFridaProjectStorage {
         }
     }
 
-    /**
-     * 保存指定 Frida 项目的配置。
-     * @param project 当前 IDE 项目
-     * @param fridaProjectDir Frida 项目目录
-     * @param cfg 项目配置
-     */
     public void saveProjectConfig(@NotNull Project project, @NotNull VirtualFile fridaProjectDir, @NotNull ZaFridaProjectConfig cfg) {
         WriteCommandAction.runWriteCommandAction(project, () -> {
             try {
@@ -115,53 +91,58 @@ public final class ZaFridaProjectStorage {
                     f = fridaProjectDir.createChildData(this, ZaFridaProjectFiles.PROJECT_FILE);
                 }
                 VfsUtil.saveText(f, toProjectXml(cfg));
-            } catch (Throwable ignore) {
+            } catch (Exception t) {
+                LOG.warn(String.format("Save ZAFrida project config failed: %s", fridaProjectDir.getPath()), t);
+                throw new IllegalStateException("Save ZAFrida project config failed", t);
             }
         });
     }
 
-    /**
-     * 计算相对路径。
-     * @param baseDir 基准目录
-     * @param file 目标文件
-     * @return 相对路径或 null
-     */
     public @Nullable String relativize(@NotNull VirtualFile baseDir, @NotNull VirtualFile file) {
         return VfsUtilCore.getRelativePath(file, baseDir, '/');
     }
 
-    // ---------------- XML format ----------------
-    // ---------------- XML 格式 ----------------
-    /**
-     * 解析工作区 XML。
-     * @param xml XML 内容
-     * @return 工作区配置
-     */
-    private ZaFridaWorkspaceConfig parseWorkspace(String xml) throws Exception {
-        Document doc = new SAXBuilder().build(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-        Element root = doc.getRootElement();
+    ZaFridaWorkspaceConfig parseWorkspace(String xml) throws Exception {
+        Element root = parseXmlRoot(xml);
+        if (!"zafridaWorkspace".equals(root.getName())) {
+            throw new IllegalArgumentException(String.format("Unexpected workspace root element: %s", root.getName()));
+        }
         ZaFridaWorkspaceConfig cfg = new ZaFridaWorkspaceConfig();
         cfg.lastSelected = root.getAttributeValue("lastSelected");
 
+        Set<String> names = new HashSet<>();
+        Set<String> directories = new HashSet<>();
         for (Element p : root.getChildren("project")) {
             String name = p.getAttributeValue("name");
             String platform = p.getAttributeValue("platform");
-            String relDir = p.getAttributeValue("relativeDir");
-            if (name == null || platform == null || relDir == null) continue;
-            cfg.projects.add(new ZaFridaFridaProject(name, ZaFridaPlatform.valueOf(platform), relDir));
+            String rawRelativeDir = p.getAttributeValue("relativeDir");
+            String relDir = normalizeSafeRelativePath(rawRelativeDir);
+            if (ZaStrUtil.isBlank(name) || platform == null || relDir == null) {
+                LOG.warn(String.format("Ignore invalid ZAFrida workspace project: name=%s relativeDir=%s", name, rawRelativeDir));
+                continue;
+            }
+            name = name.trim();
+            if (!names.add(name) || !directories.add(relDir)) {
+                LOG.warn(String.format("Ignore duplicate ZAFrida workspace project: name=%s relativeDir=%s", name, relDir));
+                continue;
+            }
+            ZaFridaPlatform parsedPlatform = parseEnum(
+                    ZaFridaPlatform.class,
+                    platform,
+                    ZaFridaPlatform.ANDROID,
+                    "workspace platform"
+            );
+            cfg.projects.add(new ZaFridaFridaProject(name, parsedPlatform, relDir));
         }
         return cfg;
     }
 
-    /**
-     * 序列化工作区配置为 XML。
-     * @param cfg 工作区配置
-     * @return XML 字符串
-     */
     private String toWorkspaceXml(ZaFridaWorkspaceConfig cfg) {
         Element root = new Element("zafridaWorkspace");
         root.setAttribute("version", String.valueOf(ZaFridaWorkspaceConfig.VERSION));
-        if (cfg.lastSelected != null) root.setAttribute("lastSelected", cfg.lastSelected);
+        if (cfg.lastSelected != null) {
+            root.setAttribute("lastSelected", cfg.lastSelected);
+        }
 
         for (ZaFridaFridaProject p : cfg.projects) {
             Element e = new Element("project");
@@ -170,95 +151,116 @@ public final class ZaFridaProjectStorage {
             e.setAttribute("relativeDir", p.getRelativeDir());
             root.addContent(e);
         }
-        return new XMLOutputter(Format.getPrettyFormat()).outputString(new Document(root));
+        return JDOMUtil.writeDocument(new Document(root), "\n");
     }
 
-    /**
-     * 解析项目 XML。
-     * @param xml XML 内容
-     * @return 项目配置
-     */
-    private ZaFridaProjectConfig parseProject(String xml) throws Exception {
-        Document doc = new SAXBuilder().build(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-        Element root = doc.getRootElement();
+    ZaFridaProjectConfig parseProject(String xml) throws Exception {
+        Element root = parseXmlRoot(xml);
+        if (!"zafridaProject".equals(root.getName())) {
+            throw new IllegalArgumentException(String.format("Unexpected project root element: %s", root.getName()));
+        }
         ZaFridaProjectConfig cfg = new ZaFridaProjectConfig();
         cfg.name = root.getAttributeValue("name", "");
-        cfg.platform = ZaFridaPlatform.valueOf(root.getAttributeValue("platform", "ANDROID"));
+        cfg.platform = parseEnum(
+                ZaFridaPlatform.class,
+                root.getAttributeValue("platform", ZaFridaPlatform.ANDROID.name()),
+                ZaFridaPlatform.ANDROID,
+                "project platform"
+        );
         String mainScriptAttr = root.getAttributeValue("mainScript");
         if (ZaStrUtil.isBlank(mainScriptAttr)) {
             cfg.mainScript = ZaFridaProjectFiles.defaultMainScriptName(cfg.name);
         } else {
-            cfg.mainScript = mainScriptAttr;
+            String mainScript = normalizeSafeRelativePath(mainScriptAttr);
+            if (mainScript == null) {
+                LOG.warn(String.format("Ignore unsafe ZAFrida main script path: %s", mainScriptAttr));
+                cfg.mainScript = ZaFridaProjectFiles.defaultMainScriptName(cfg.name);
+            } else {
+                cfg.mainScript = mainScript;
+            }
         }
-        cfg.attachScript = root.getAttributeValue("attachScript", "");
+        String attachScriptAttr = root.getAttributeValue("attachScript", "");
+        if (ZaStrUtil.isBlank(attachScriptAttr)) {
+            cfg.attachScript = "";
+        } else {
+            String attachScript = normalizeSafeRelativePath(attachScriptAttr);
+            if (attachScript == null) {
+                LOG.warn(String.format("Ignore unsafe ZAFrida attach script path: %s", attachScriptAttr));
+                cfg.attachScript = "";
+            } else {
+                cfg.attachScript = attachScript;
+            }
+        }
         cfg.lastTarget = root.getAttributeValue("lastTarget");
         cfg.spawnMode = Boolean.parseBoolean(root.getAttributeValue("spawnMode", "true"));
         cfg.extraArgs = root.getAttributeValue("extraArgs", "");
         cfg.targetManual = Boolean.parseBoolean(root.getAttributeValue("targetManual", "true"));
-        cfg.processScope = FridaProcessScope.valueOf(
-                root.getAttributeValue("processScope", FridaProcessScope.RUNNING_APPS.name())
+        cfg.processScope = parseEnum(
+                FridaProcessScope.class,
+                root.getAttributeValue("processScope", FridaProcessScope.RUNNING_APPS.name()),
+                FridaProcessScope.RUNNING_APPS,
+                "process scope"
+        );
+        cfg.connectionMode = parseEnum(
+                FridaConnectionMode.class,
+                root.getAttributeValue("connectionMode", FridaConnectionMode.USB.name()),
+                FridaConnectionMode.USB,
+                "connection mode"
         );
 
-        String modeRaw = root.getAttributeValue("connectionMode", FridaConnectionMode.USB.name());
-        try {
-            cfg.connectionMode = FridaConnectionMode.valueOf(modeRaw);
-        } catch (IllegalArgumentException ignore) {
-            cfg.connectionMode = FridaConnectionMode.USB;
-        }
-
         cfg.remoteHost = root.getAttributeValue("remoteHost", "127.0.0.1");
-        cfg.remotePort = parseInt(root.getAttributeValue("remotePort"), 14725);
+        cfg.remotePort = parsePort(root.getAttributeValue("remotePort"), 14725);
         cfg.lastDeviceId = root.getAttributeValue("lastDeviceId");
         cfg.lastDeviceHost = root.getAttributeValue("lastDeviceHost");
+        cfg.pythonEnvironmentPath = root.getAttributeValue("pythonEnvironmentPath", "");
         return cfg;
     }
 
-    /**
-     * 序列化项目配置为 XML。
-     * @param cfg 项目配置
-     * @return XML 字符串
-     */
-    private String toProjectXml(ZaFridaProjectConfig cfg) {
+    String toProjectXml(ZaFridaProjectConfig cfg) {
         Element root = new Element("zafridaProject");
         root.setAttribute("version", String.valueOf(ZaFridaProjectConfig.VERSION));
         root.setAttribute("name", cfg.name);
         root.setAttribute("platform", cfg.platform.name());
         root.setAttribute("mainScript", cfg.mainScript);
-        root.setAttribute("attachScript", cfg.attachScript == null ? "" : cfg.attachScript);
+        root.setAttribute("attachScript", nonNull(cfg.attachScript));
         root.setAttribute("spawnMode", String.valueOf(cfg.spawnMode));
-        root.setAttribute("extraArgs", cfg.extraArgs == null ? "" : cfg.extraArgs);
-        if (cfg.lastTarget != null) root.setAttribute("lastTarget", cfg.lastTarget);
+        root.setAttribute("extraArgs", nonNull(cfg.extraArgs));
+        if (cfg.lastTarget != null) {
+            root.setAttribute("lastTarget", cfg.lastTarget);
+        }
         root.setAttribute("targetManual", String.valueOf(cfg.targetManual));
         root.setAttribute("processScope", cfg.processScope.name());
         root.setAttribute("connectionMode", cfg.connectionMode.name());
         root.setAttribute("remoteHost", cfg.remoteHost);
         root.setAttribute("remotePort", String.valueOf(cfg.remotePort));
-        if (cfg.lastDeviceId != null) root.setAttribute("lastDeviceId", cfg.lastDeviceId);
-        if (cfg.lastDeviceHost != null) root.setAttribute("lastDeviceHost", cfg.lastDeviceHost);
-        return new XMLOutputter(Format.getPrettyFormat()).outputString(new Document(root));
+        if (cfg.lastDeviceId != null) {
+            root.setAttribute("lastDeviceId", cfg.lastDeviceId);
+        }
+        if (cfg.lastDeviceHost != null) {
+            root.setAttribute("lastDeviceHost", cfg.lastDeviceHost);
+        }
+        if (ZaStrUtil.isNotBlank(cfg.pythonEnvironmentPath)) {
+            root.setAttribute("pythonEnvironmentPath", cfg.pythonEnvironmentPath.trim());
+        }
+        return JDOMUtil.writeDocument(new Document(root), "\n");
     }
 
-    /**
-     * 安全解析整数。
-     * @param value 字符串值
-     * @param fallback 解析失败时的回退值
-     * @return 解析结果
-     */
-    private static int parseInt(@Nullable String value, int fallback) {
-        if (ZaStrUtil.isBlank(value)) return fallback;
+    private static int parsePort(@Nullable String value, int fallback) {
+        if (ZaStrUtil.isBlank(value)) {
+            return fallback;
+        }
         try {
-            return Integer.parseInt(value.trim());
+            int port = Integer.parseInt(value.trim());
+            if (port > 0 && port <= 65_535) {
+                return port;
+            }
+            return fallback;
         } catch (NumberFormatException e) {
             return fallback;
         }
     }
 
-    // 仅在外层已经处于 write-action 时调用
-    /**
-     * 在已处于写操作上下文时保存工作区配置。
-     * @param baseDir 项目根目录
-     * @param cfg 工作区配置
-     */
+    // 调用方必须已持有 write action。
     public void saveWorkspaceNoWriteAction(@NotNull VirtualFile baseDir, @NotNull ZaFridaWorkspaceConfig cfg) {
         try {
             VirtualFile file = baseDir.findChild(ZaFridaProjectFiles.WORKSPACE_FILE);
@@ -266,16 +268,13 @@ public final class ZaFridaProjectStorage {
                 file = baseDir.createChildData(this, ZaFridaProjectFiles.WORKSPACE_FILE);
             }
             VfsUtil.saveText(file, toWorkspaceXml(cfg));
-        } catch (Throwable ignore) {
+        } catch (Exception t) {
+            LOG.warn(String.format("Save ZAFrida workspace in write action failed: %s", baseDir.getPath()), t);
+            throw new IllegalStateException("Save ZAFrida workspace failed", t);
         }
     }
 
-    // 仅在外层已经处于 write-action 时调用
-    /**
-     * 在已处于写操作上下文时保存项目配置。
-     * @param fridaProjectDir Frida 项目目录
-     * @param cfg 项目配置
-     */
+    // 调用方必须已持有 write action。
     public void saveProjectConfigNoWriteAction(@NotNull VirtualFile fridaProjectDir, @NotNull ZaFridaProjectConfig cfg) {
         try {
             VirtualFile f = fridaProjectDir.findChild(ZaFridaProjectFiles.PROJECT_FILE);
@@ -283,7 +282,64 @@ public final class ZaFridaProjectStorage {
                 f = fridaProjectDir.createChildData(this, ZaFridaProjectFiles.PROJECT_FILE);
             }
             VfsUtil.saveText(f, toProjectXml(cfg));
-        } catch (Throwable ignore) {
+        } catch (Exception t) {
+            LOG.warn(String.format("Save ZAFrida project config in write action failed: %s", fridaProjectDir.getPath()), t);
+            throw new IllegalStateException("Save ZAFrida project config failed", t);
+        }
+    }
+
+    private static @NotNull String nonNull(@Nullable String value) {
+        if (value == null) {
+            return "";
+        }
+        return value;
+    }
+
+    private static <E extends Enum<E>> @NotNull E parseEnum(@NotNull Class<E> type,
+                                                             @Nullable String value,
+                                                             @NotNull E fallback,
+                                                             @NotNull String fieldName) {
+        if (ZaStrUtil.isBlank(value)) {
+            return fallback;
+        }
+        try {
+            return Enum.valueOf(type, value.trim());
+        } catch (IllegalArgumentException e) {
+            LOG.warn(String.format("Unknown ZAFrida %s value '%s'; using %s", fieldName, value, fallback.name()));
+            return fallback;
+        }
+    }
+
+    private static @NotNull Element parseXmlRoot(@NotNull String xml) throws Exception {
+        return JDOMUtil.load(xml);
+    }
+
+    private static @Nullable String normalizeSafeRelativePath(@Nullable String value) {
+        if (ZaStrUtil.isBlank(value)) {
+            return null;
+        }
+        try {
+            String normalizedSeparators = value.trim().replace('\\', '/');
+            if (normalizedSeparators.length() >= 3
+                    && Character.isLetter(normalizedSeparators.charAt(0))
+                    && normalizedSeparators.charAt(1) == ':'
+                    && normalizedSeparators.charAt(2) == '/') {
+                return null;
+            }
+            Path path = Paths.get(normalizedSeparators);
+            if (path.isAbsolute()) {
+                return null;
+            }
+            Path normalized = path.normalize();
+            if (normalized.getNameCount() == 0 || normalized.toString().isEmpty() || ".".equals(normalized.toString())) {
+                return null;
+            }
+            if ("..".equals(normalized.getName(0).toString())) {
+                return null;
+            }
+            return normalized.toString().replace('\\', '/');
+        } catch (InvalidPathException e) {
+            return null;
         }
     }
 

@@ -4,7 +4,7 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-Current Version: 0.3.6
+Current Version: 0.3.7
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -34,17 +34,18 @@ Quick Start
 -----------------------------------
 
 1.  **Install Plugin**: Search for "ZAFrida" in the IDE Plugin Marketplace or install via disk.
-2.  **Configure Environment**: Go to `Settings` -> `Tools` -> `ZAFrida` and configure `frida` executable paths (if not auto-detected).
+2.  **Configure the Default Environment**: ZAFrida uses the current PyCharm project interpreter by default. Global `Settings` -> `Tools` -> `ZAFrida` keeps only the default tool names/paths.
 3.  **Create Project**: Right-click in Project View -> `New Frida Project`.
-4.  **Write/Select Script**: Select your `agent.js` in the Run Panel.
+    * If this project needs a different Frida version, open ZAFrida `Project Settings`, select a Python interpreter or environment directory, and click `Test`.
+4.  **Write/Select Script**: Select your `agent.js` or `agent.ts` in the Run Panel.
 5.  **Hook & Debug**:
     * Connect device (USB or Remote).
     * Select target process or package name.
     * Click **Run**.
 6.  **Use Templates**: Switch to the `Templates` tab, check the Hook functions you need (e.g., "SSL Pinning Bypass"), and the code will be automatically injected into your script.
 7.  **Skills Automation (Optional)**: Disabled by default. Go to `Settings/Preferences -> ZAFrida -> Skills HTTP API`, check `Enable Skills` to auto-start the local API (or use manual `Start/Stop`). CLI and template locations:
-    * `skills-cli/zafrida_skill_cli.py`
-    * `skills-template/zafrida-http-control/`
+    * Skill and canonical CLI: `skills-template/zafrida-http-control/`
+    * Legacy-path compatibility launcher: `skills-cli/zafrida_skill_cli.py`
 
 
 Features
@@ -61,10 +62,10 @@ Features
     * Supports **Force Stop** to terminate target applications.
     * Built-in console output with automatic log persistence to the `zafrida-logs/` directory.
 
-* **JS Editor Context Menu (Important)**
-    * Right-click inside a Frida JS editor to directly choose:
-        * **Run Frida JS** – run the currently opened JS file as the main script (default Spawn).
-        * **Attach Frida JS** – attach the currently opened JS file to an already running target process.
+* **JavaScript / TypeScript Editor Context Menu (Important)**
+    * Right-click inside a Frida `.js` or `.ts` editor to directly choose:
+        * **Run Frida Script** – run the current file as the main script (default Spawn).
+        * **Attach Frida Script** – attach the current file to an already running target process.
     * The file is automatically saved before execution, and the corresponding ZAFrida Project is auto-selected.
     * Ideal for quick PoC validation, demos, Gadget mode, or attaching to live processes.
     * **Shortcut**:
@@ -72,7 +73,7 @@ Features
         * macOS: `⌘ + ⌥ + S`
 
 * **Editor Snippets Insertion**
-    * Provides **ZAFrida Frida Snippets** in the JS editor context menu.
+    * Provides **ZAFrida Frida Snippets** in JavaScript and TypeScript editors.
     * One-click insertion of common Frida code patterns, including:
         * `Java.perform` wrappers
         * Java method hook templates
@@ -99,26 +100,31 @@ Features
     * UI state and configuration are automatically restored when switching projects.
 
 * **Smart Python / Frida Environment Resolution**
-    * Automatically detects the current PyCharm project’s Python SDK (venv / conda).
-    * Dynamically injects PATH to ensure the correct `frida` / `frida-tools` are used.
-    * Handles Remote and Gadget scenarios to avoid incorrect local environment injection.
+    * Uses the current PyCharm project SDK by default; each ZAFrida Project can override it with an interpreter or environment directory.
+    * Supports local system/pyenv, venv/virtualenv, Conda, uv, Poetry, Pipenv, and Hatch environments.
+    * Multiple ZAFrida Projects can share one environment path without copying the venv, making separate Frida 16/17 environments practical.
+    * Missing `frida-tools` in either the current IDE environment or an explicit project environment fails clearly instead of silently using another version from system PATH; `Test` reports the effective Frida version.
+    * Remote SSH, Docker, Docker Compose, and WSL interpreters cannot currently back a local Frida process.
 
-* **Developer Aids**
-    * One-click installation of `frida-gum.d.ts` for type hints and intelligent code completion in Frida JS.
+* **Frida 17 / TypeScript**
+    * File selection, editor Run/Attach, and snippets support `.js` and `.ts`; Frida 17's REPL automatically compiles `-l agent.ts`.
+    * Bundled templates use the modern Module/NativePointer APIs required by Frida 17 while remaining suitable for common Frida 16 environments.
+    * The frida-tools REPL bundles the standard Java/ObjC bridges for compatibility; npm or third-party module imports should use `frida-create -t agent` or an equivalent project.
 
 * **Skills Local Automation API**
-    * Adds a local Skills HTTP API (disabled by default) for scripted control: project switching, device/connection mode setup, Run/Attach actions, and run/attach log path/content reading.
+    * The opt-in loopback API exposes capabilities, projects/Python environments, devices/processes, Run/Attach, historical logs, and cursor-based incremental log reads.
+    * The Skill adds bounded `wait-device` / `wait-session` recovery and distinguishes safe reads from side-effecting operations that must not be replayed automatically.
     * How to enable: `Settings/Preferences -> ZAFrida -> Skills HTTP API`, then check `Enable Skills`.
     * Bundled CLI and template:
-        * `skills-cli/zafrida_skill_cli.py`
-        * `skills-template/zafrida-http-control/`
+        * `skills-template/zafrida-http-control/` (canonical Skill and CLI)
+        * `skills-cli/zafrida_skill_cli.py` (legacy-path compatibility launcher)
 
 Use Cases
 -----------------------------------
 ZAFrida UI is suitable for all scenarios involving reverse engineering with Frida, especially:
 * Android / iOS App penetration testing and reverse analysis.
 * Debugging processes requiring frequent switching of different Hook scripts.
-* Engineers accustomed to using IDEs (PyCharm/IDEA) for mixed Python and JS development.
+* Engineers accustomed to using IDEs (PyCharm/IDEA) for mixed Python, JavaScript, and TypeScript development.
 
 Technical Documentation
 -----------------------------------
@@ -161,7 +167,7 @@ Technical Architecture
 -----------------------------------
 
 #### Development Environment
-- Language: Language: Java 21 (production source). Build scripts use Gradle Kotlin DSL.
+- Language: Java 21 (production source). Build scripts use Gradle Kotlin DSL.
 - Framework: IntelliJ Platform SDK
 - Build Tool: Gradle
 - Dependency: `frida` `frida-tools` (Python environment)

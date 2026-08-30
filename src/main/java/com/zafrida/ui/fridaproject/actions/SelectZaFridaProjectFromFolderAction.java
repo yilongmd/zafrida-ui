@@ -15,22 +15,13 @@ import com.zafrida.ui.fridaproject.ZaFridaProjectFiles;
 import com.zafrida.ui.fridaproject.ZaFridaProjectManager;
 import com.zafrida.ui.util.ZaFridaNotifier;
 
-/**
- * [Action] 从文件夹中选择已加载的 ZAFrida 项目。
- * <p>
- * 仅切换激活项目，不负责导入/加载。
- */
 public final class SelectZaFridaProjectFromFolderAction extends AnAction {
 
-    /**
-     * 菜单可用性更新逻辑。
-     * @param e Action 事件
-     */
     @Override
     public void update(AnActionEvent e) {
         VirtualFile vf = null;
 
-        // 方法1：通过 IDE_VIEW 获取（ProjectView 右键菜单最可靠的方式）
+        // Project View 下 IDE_VIEW 比 VIRTUAL_FILE 更稳定。
         IdeView ideView = e.getData(LangDataKeys.IDE_VIEW);
         if (ideView != null) {
             PsiDirectory[] dirs = ideView.getDirectories();
@@ -39,8 +30,6 @@ public final class SelectZaFridaProjectFromFolderAction extends AnAction {
             }
         }
 
-        // 方法2：fallback
-        // 方法2：兜底方案
         if (vf == null) {
             vf = e.getData(CommonDataKeys.VIRTUAL_FILE);
         }
@@ -56,10 +45,6 @@ public final class SelectZaFridaProjectFromFolderAction extends AnAction {
         e.getPresentation().setEnabled(isDir);
     }
 
-    /**
-     * 菜单执行逻辑。
-     * @param e Action 事件
-     */
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();
@@ -115,10 +100,6 @@ public final class SelectZaFridaProjectFromFolderAction extends AnAction {
         });
     }
 
-    /**
-     * 激活 ZAFrida 工具窗口。
-     * @param project 当前 IDE 项目
-     */
     private static void activateToolWindow(Project project) {
         ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow("ZAFrida");
         if (toolWindow != null) {

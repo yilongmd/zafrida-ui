@@ -7,20 +7,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JList;
-/**
- * [UI组件] 设备列表渲染器。
- * <p>
- * <strong>显示格式：</strong>
- * <b>[Type]</b> Name (ID/Host)
- * <br>例如：<b>[usb]</b> Pixel 6 (127.0.0.1:5555)
- * <p>
- * 用于 {@link com.zafrida.ui.ui.ZaFridaRunPanel} 中的设备下拉框。
- */
+
 public final class DeviceCellRenderer extends ColoredListCellRenderer<FridaDevice> {
 
-    /**
-     * 渲染设备下拉项。
-     */
     @Override
     protected void customizeCellRenderer(@NotNull JList<? extends FridaDevice> list,
                                          @Nullable FridaDevice value,
@@ -36,7 +25,10 @@ public final class DeviceCellRenderer extends ColoredListCellRenderer<FridaDevic
         append("  ");
         append(value.getName(), SimpleTextAttributes.REGULAR_ATTRIBUTES);
         append("  ");
-        String suffix = value.getHost() != null ? value.getHost() : value.getId();
+        String suffix = value.getId();
+        if (value.getHost() != null) {
+            suffix = value.getHost();
+        }
         append(String.format("(%s)", suffix), SimpleTextAttributes.GRAYED_ATTRIBUTES);
     }
 }

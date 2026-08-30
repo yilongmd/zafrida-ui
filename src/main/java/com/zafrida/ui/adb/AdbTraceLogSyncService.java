@@ -27,20 +27,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/**
- * [Service] Android trace 日志拉取与增量同步。
- * <p>
- * 目标场景：
- * Android 设备上 native trace 输出在 {@code /data/data/<package>/files/}，
- * 文件名包含 {@code trace} 且后缀为 {@code .txt/.log}。
- * <p>
- * 同步策略：
- * 1) 先通过 adb 列出远端文件清单（含 size）。
- * 2) 本地已存在的文件若 size 相同则跳过；size 不同则重新拉取覆盖。
- * <p>
- * 线程约束：
- * 通过 {@link Task.Backgroundable} 在后台执行，避免阻塞 EDT。
- */
 public final class AdbTraceLogSyncService {
 
     private static final Logger LOG = Logger.getInstance(AdbTraceLogSyncService.class);
@@ -49,21 +35,8 @@ public final class AdbTraceLogSyncService {
     private static final int PULL_TIMEOUT_MS = 5 * 60_000;
     private static final int STAGING_COPY_TIMEOUT_MS = PULL_TIMEOUT_MS;
     private static final String TRACE_LOGS_SUB_DIR = "trace-logs";
-    /** 用于绕过 /data/data 的权限限制：先 su 拷贝到 /sdcard，再 adb pull。 */
     private static final String REMOTE_PULL_STAGING_DIR = "/sdcard/Download/ZAFrida/trace-logs";
 
-    /**
-     * 拉取并增量同步 Android trace 日志文件。
-     *
-     * @param project IDE Project
-     * @param deviceId adb -s 参数；为空则使用默认设备
-     * @param packageName Android 包名
-     * @param fridaProjectDir 当前 ZAFrida 子项目目录（可为空，为空则使用 project basePath）
-     * @param info 信息输出（建议绑定到 Console）
-     * @param warn 警告输出（建议绑定到 Console）
-     * @param error 错误输出（建议绑定到 Console）
-     * @param uiOnDone UI 线程回调（返回同步结果）
-     */
     public void pullAndroidTraceLogsIncrementally(@NotNull Project project,
                                                   @Nullable String deviceId,
                                                   @NotNull String packageName,

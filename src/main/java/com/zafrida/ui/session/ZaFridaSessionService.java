@@ -3,9 +3,11 @@ package com.zafrida.ui.session;
 import com.intellij.execution.process.ProcessAdapter;
 import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessHandler;
+import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import com.zafrida.ui.frida.FridaCliService;
@@ -16,52 +18,37 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
-/**
- * [会话管理] 负责 Frida 运行时的生命周期管理。
- * <p>
- * <strong>功能：</strong>
- * 1. 启动 Frida 进程并将输出流挂载到 {@link com.intellij.execution.ui.ConsoleView}。
- * 2. 维护 Run/Attach 两类 {@link RunningSession}。
- * 3. 负责日志持久化：将控制台输出实时写入 `zafrida-logs/` 目录。
- * <p>
- * <strong>线程安全：</strong> start/stop 方法是 synchronized 的。
- */
+/** 会话映射的读写全部由 synchronized 方法或显式 synchronized 块保护。 */
 public final class ZaFridaSessionService implements Disposable {
 
-    /** IDE 项目实例 */
+    private static final Logger LOG = Logger.getInstance(ZaFridaSessionService.class);
+    private static final Pattern SENSITIVE_ARGUMENT = Pattern.compile(
+            "(?i)(--(?:token|password|secret|api-key)(?:=|\\s+))(\\\"[^\\\"]*\\\"|'[^']*'|\\S+)"
+    );
+
     private final @NotNull Project project;
-    /** Frida CLI 服务实例 */
     private final @NotNull FridaCliService fridaCliService;
 
-    /** 会话类型到运行会话的映射 */
     private final EnumMap<ZaFridaSessionType, RunningSession> sessions = new EnumMap<>(ZaFridaSessionType.class);
-    /** 会话类型到日志写入器的映射 */
     private final EnumMap<ZaFridaSessionType, SessionLogWriter> logWriters = new EnumMap<>(ZaFridaSessionType.class);
+    private final Set<SessionLogWriter> activeLogWriters =
+            Collections.newSetFromMap(new IdentityHashMap<>());
 
-    /**
-     * 构造函数。
-     * @param project 当前 IDE 项目
-     */
     public ZaFridaSessionService(@NotNull Project project) {
         this.project = project;
         this.fridaCliService = ApplicationManager.getApplication().getService(FridaCliService.class);
     }
 
-    /**
-     * 启动指定类型的会话。
-     *
-     * @param type 会话类型（Run/Attach）
-     * @param config Frida 运行配置
-     * @param consoleView 控制台视图
-     * @param info 信息输出回调
-     * @param error 错误输出回调
-     * @param fridaProjectDir Frida 项目目录（可选）
-     * @param targetPackage 目标包名（可选）
-     * @return 已创建的运行会话
-     */
     public synchronized @NotNull RunningSession start(@NotNull ZaFridaSessionType type,
                                                       @NotNull FridaRunConfig config,
                                                       @NotNull ConsoleView consoleView,
@@ -71,28 +58,37 @@ public final class ZaFridaSessionService implements Disposable {
                                                       @Nullable String targetPackage) throws Exception {
         stop(type);
 
+        GeneralCommandLine commandLine = fridaCliService.buildRunCommandLine(project, config);
+        String safeCommandLine = redactSensitiveArguments(commandLine.getCommandLineString());
+        info.accept(String.format("[ZAFrida] Command: %s", safeCommandLine));
+        ProcessHandler handler = fridaCliService.createRunProcessHandler(commandLine);
+
         String basePath = project.getBasePath();
         String sessionTag = "run";
         if (type == ZaFridaSessionType.ATTACH) {
             sessionTag = "attach";
         }
-        Path logFile = basePath != null ? ZaFridaLogPaths.newSessionLogFile(basePath, fridaProjectDir, targetPackage, sessionTag) : null;
-        String logPathStr = logFile != null ? logFile.toAbsolutePath().toString() : "(log disabled: project basePath is null)";
+        Path logFile = null;
+        if (basePath != null) {
+            logFile = ZaFridaLogPaths.newSessionLogFile(basePath, fridaProjectDir, targetPackage, sessionTag);
+        }
+        String logPathStr = "(log disabled: project basePath is null)";
+        if (logFile != null) {
+            logPathStr = logFile.toAbsolutePath().toString();
+        }
 
         SessionLogWriter writer = null;
         if (logFile != null) {
-            writer = new SessionLogWriter(logFile);
+            try {
+                writer = new SessionLogWriter(logFile);
+                writer.append(String.format("[ZAFrida] Session started: %s%n", Instant.now()));
+                writer.append(String.format("[ZAFrida] Command: %s%n", safeCommandLine));
+            } catch (Exception e) {
+                LOG.warn(String.format("Create Frida session log writer failed: type=%s file=%s", type, logFile), e);
+                error.accept(String.format("[ZAFrida] Log disabled: %s", e.getMessage()));
+                logPathStr = String.format("(log disabled: %s)", e.getMessage());
+            }
         }
-        if (writer != null) {
-            logWriters.put(type, writer);
-        }
-
-        // show command line
-        // 显示命令行
-        String cmdLine = fridaCliService.buildRunCommandLine(project, config).getCommandLineString();
-        info.accept(String.format("[ZAFrida] Command: %s", cmdLine));
-
-        ProcessHandler handler = fridaCliService.createRunProcessHandler(project, config);
 
         SessionLogWriter finalWriter = writer;
         handler.addProcessListener(new ProcessAdapter() {
@@ -118,81 +114,137 @@ public final class ZaFridaSessionService implements Disposable {
                     if (currentWriter == finalWriter) {
                         logWriters.remove(type);
                     }
+                    activeLogWriters.remove(finalWriter);
                 }
             }
         });
 
-        consoleView.attachToProcess(handler);
-        handler.startNotify();
-
-        RunningSession session = new RunningSession(handler, logPathStr);
+        RunningSession session = new RunningSession(
+                handler,
+                logPathStr,
+                safeCommandLine,
+                System.currentTimeMillis()
+        );
         sessions.put(type, session);
-        return session;
+        if (writer != null) {
+            logWriters.put(type, writer);
+            activeLogWriters.add(writer);
+        }
+
+        try {
+            consoleView.attachToProcess(handler);
+            handler.startNotify();
+            return session;
+        } catch (Throwable t) {
+            sessions.remove(type);
+            logWriters.remove(type);
+            activeLogWriters.remove(writer);
+            if (!handler.isProcessTerminated()) {
+                handler.destroyProcess();
+            }
+            if (writer != null) {
+                writer.close();
+            }
+            if (t instanceof Exception exception) {
+                throw exception;
+            }
+            if (t instanceof Error errorValue) {
+                throw errorValue;
+            }
+            throw new RuntimeException(t);
+        }
     }
 
-    /**
-     * 停止指定类型的会话。
-     * @param type 会话类型
-     */
     public synchronized void stop(@NotNull ZaFridaSessionType type) {
         RunningSession session = sessions.remove(type);
+        SessionLogWriter writer = logWriters.remove(type);
         if (session != null) {
+            if (writer != null) {
+                writer.append(String.format("%n[ZAFrida] Stop requested: %s%n", Instant.now()));
+            }
             ProcessHandler handler = session.getProcessHandler();
             if (!handler.isProcessTerminated()) {
                 try {
                     handler.destroyProcess();
-                } catch (Throwable ignored) {
+                } catch (Throwable t) {
+                    LOG.warn(String.format("Stop Frida process failed: type=%s", type), t);
+                    closeTrackedWriter(writer, type);
                 }
             }
+            return;
         }
-
-        SessionLogWriter writer = logWriters.remove(type);
-        if (writer != null) {
-            try {
-                writer.close();
-            } catch (Throwable ignored) {
-            }
-        }
+        closeTrackedWriter(writer, type);
     }
 
-    /**
-     * 停止所有会话。
-     */
     public synchronized void stop() {
         for (ZaFridaSessionType type : ZaFridaSessionType.values()) {
             stop(type);
         }
     }
 
-    /**
-     * 判断指定类型的会话是否仍在运行。
-     * @param type 会话类型
-     * @return true 表示运行中
-     */
     public synchronized boolean isRunning(@NotNull ZaFridaSessionType type) {
         RunningSession session = sessions.get(type);
         return session != null && !session.getProcessHandler().isProcessTerminated();
     }
 
-    /**
-     * 创建用于更新 UI 状态的进程监听器。
-     * @param onTerminated 进程结束回调
-     * @return ProcessAdapter 实例
-     */
+    public synchronized @Nullable RunningSession getRunningSession(@NotNull ZaFridaSessionType type) {
+        RunningSession session = sessions.get(type);
+        if (session == null || session.getProcessHandler().isProcessTerminated()) {
+            return null;
+        }
+        return session;
+    }
+
+    private static @NotNull String redactSensitiveArguments(@NotNull String commandLine) {
+        return SENSITIVE_ARGUMENT.matcher(commandLine).replaceAll("$1<redacted>");
+    }
+
     public @NotNull ProcessAdapter createUiStateListener(@NotNull Runnable onTerminated) {
         return new ProcessAdapter() {
             @Override
             public void processTerminated(@NotNull ProcessEvent event) {
-                onTerminated.run();
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (!project.isDisposed()) {
+                        onTerminated.run();
+                    }
+                });
             }
         };
     }
 
-    /**
-     * 释放资源并停止所有会话。
-     */
     @Override
     public void dispose() {
         stop();
+        List<SessionLogWriter> writers;
+        synchronized (this) {
+            writers = new ArrayList<>(activeLogWriters);
+            activeLogWriters.clear();
+            logWriters.clear();
+        }
+        for (SessionLogWriter writer : writers) {
+            closeWriter(writer, null);
+        }
+    }
+
+    private synchronized void closeTrackedWriter(@Nullable SessionLogWriter writer,
+                                                 @NotNull ZaFridaSessionType type) {
+        if (writer == null) {
+            return;
+        }
+        activeLogWriters.remove(writer);
+        closeWriter(writer, type);
+    }
+
+    private void closeWriter(@NotNull SessionLogWriter writer,
+                             @Nullable ZaFridaSessionType type) {
+        try {
+            writer.close();
+        } catch (Throwable t) {
+            String context = "project disposal";
+            if (type != null) {
+                context = String.format("type=%s", type);
+            }
+            LOG.warn(String.format("Close Frida session log failed: %s", context), t);
+        }
     }
 }

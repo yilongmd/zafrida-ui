@@ -13,6 +13,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.SearchTextField;
@@ -33,43 +34,22 @@ import java.awt.FlowLayout;
 import java.awt.Insets;
 import java.io.File;
 
-/**
- * [UI组件] 自定义控制台面板。
- * <p>
- * 封装了 {@link ConsoleView}，并提供日志文件工具栏（定位/打开/VS Code）与简单的搜索工具栏。
- * 它是 {@link com.zafrida.ui.session.ZaFridaSessionService} 输出日志的目标容器。
- */
 public final class ZaFridaConsolePanel extends JPanel implements Disposable {
 
-    /** 当前 IDE 项目 */
     private final @NotNull Project project;
 
-    /** 日志文件路径提示标签 */
     private final JLabel logFileLabel = new JLabel("Log: (not started)");
-    /** 定位日志文件按钮 */
     private final JButton locateLogFileBtn = new JButton("");
-    /** 打开日志文件按钮（IDE 编辑器） */
     private final JButton openLogFileBtn = new JButton("");
-    /** 使用 VS Code 打开日志文件按钮 */
     private final JButton openLogFileInVsCodeBtn = new JButton("");
-    /** 清空当前控制台按钮 */
     private final JButton clearConsoleBtn = new JButton("");
-    /** 最近一次会话日志文件路径（用于工具栏按钮） */
     private @Nullable String lastLogFilePath;
 
-    /** 控制台视图 */
     private final ConsoleView consoleView;
-    /** 搜索输入框 */
     private final SearchTextField searchField = new SearchTextField();
-    /** 上一次匹配起始位置 */
     private int lastMatchStart = -1;
-    /** 上一次查询关键字 */
     private String lastQuery = "";
 
-    /**
-     * 构造函数。
-     * @param project 当前 IDE 项目
-     */
     public ZaFridaConsolePanel(@NotNull Project project) {
         super(new BorderLayout());
         this.project = project;
@@ -81,53 +61,27 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         add(consoleView.getComponent(), BorderLayout.CENTER);
     }
 
-    /**
-     * 获取控制台视图。
-     * @return ConsoleView
-     */
     public ConsoleView getConsoleView() {
         return consoleView;
     }
 
-    /**
-     * 清空控制台内容。
-     */
     public void clear() {
         consoleView.clear();
         lastMatchStart = -1;
     }
 
-    /**
-     * 打印普通信息。
-     * @param message 文本内容
-     */
     public void info(String message) {
         consoleView.print(String.format("%s\n", message), ConsoleViewContentType.NORMAL_OUTPUT);
     }
 
-    /**
-     * 打印警告信息。
-     * @param message 文本内容
-     */
     public void warn(String message) {
         consoleView.print(String.format("%s\n", message), ConsoleViewContentType.LOG_WARNING_OUTPUT);
     }
 
-    /**
-     * 打印错误信息。
-     * @param message 文本内容
-     */
     public void error(String message) {
         consoleView.print(String.format("%s\n", message), ConsoleViewContentType.ERROR_OUTPUT);
     }
 
-    /**
-     * 设置当前控制台对应的日志文件路径（Run/Attach 各自独立）。
-     * <p>
-     * 仅用于 UI 展示与快捷操作，不影响日志写入逻辑。
-     *
-     * @param logFilePath 日志文件路径；当为空或不可用时按钮会禁用
-     */
     public void setLogFilePath(@Nullable String logFilePath) {
         this.lastLogFilePath = logFilePath;
 
@@ -150,24 +104,27 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         openLogFileInVsCodeBtn.setEnabled(enabled);
     }
 
-    /**
-     * 获取最近一次会话日志路径。
-     * @return 日志路径，未启动时返回 null
-     */
     public @Nullable String getLogFilePath() {
         return lastLogFilePath;
     }
 
-    /**
-     * 获取当前控制台文本快照。
-     * @return 控制台文本（可能为空字符串）
-     */
-    public @NotNull String getConsoleTextSnapshot() {
+    public int getConsoleTextLength() {
         Editor editor = getEditor();
         if (editor == null) {
+            return 0;
+        }
+        return editor.getDocument().getTextLength();
+    }
+
+    public @NotNull String getConsoleTextTailSnapshot(int maxCharacters) {
+        Editor editor = getEditor();
+        if (editor == null || maxCharacters <= 0) {
             return "";
         }
-        return editor.getDocument().getText();
+        Document document = editor.getDocument();
+        int end = document.getTextLength();
+        int start = Math.max(0, end - maxCharacters);
+        return document.getText(new TextRange(start, end));
     }
 
     private void initLogToolbar() {
@@ -216,10 +173,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         return panel;
     }
 
-    /**
-     * 构建搜索工具栏。
-     * @return 面板组件
-     */
     private JPanel buildSearchPanel() {
         JPanel panel = new JPanel(new BorderLayout(8, 0));
         searchField.getTextEditor().addActionListener(event -> findNext(true));
@@ -337,10 +290,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         ZaFridaNotifier.warn(project, "ZAFrida", String.format("Log file not found: %s", trimmed));
     }
 
-    /**
-     * 查找下一个匹配项并定位光标。
-     * @param forward true 表示向前查找
-     */
     private void findNext(boolean forward) {
         String query = searchField.getText();
         if (ZaStrUtil.isBlank(query)) {
@@ -359,7 +308,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         if (text.isEmpty()) {
             return;
         }
-        // 计算起始位置，优先从上一次匹配处继续
         int caretOffset = editor.getCaretModel().getOffset();
         int startIndex = resolveStartIndex(forward, caretOffset, text.length());
         int matchStart = forward
@@ -368,7 +316,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         if (matchStart == -1) {
             return;
         }
-        // 选中并滚动到匹配位置
         int matchEnd = matchStart + query.length();
         lastMatchStart = matchStart;
         editor.getSelectionModel().setSelection(matchStart, matchEnd);
@@ -376,16 +323,12 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         editor.getScrollingModel().scrollToCaret(ScrollType.MAKE_VISIBLE);
     }
 
-    /**
-     * 解析查找起始索引。
-     * @param forward 是否向前
-     * @param caretOffset 当前光标位置
-     * @param textLength 文本长度
-     * @return 起始索引
-     */
     private int resolveStartIndex(boolean forward, int caretOffset, int textLength) {
         if (lastMatchStart != -1) {
-            return forward ? lastMatchStart + 1 : lastMatchStart - 1;
+            if (forward) {
+                return lastMatchStart + 1;
+            }
+            return lastMatchStart - 1;
         }
         if (forward) {
             return Math.min(caretOffset, textLength);
@@ -393,13 +336,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         return Math.min(Math.max(caretOffset - 1, 0), Math.max(textLength - 1, 0));
     }
 
-    /**
-     * 向前查找匹配。
-     * @param text 全文
-     * @param query 查询关键字
-     * @param startIndex 起始索引
-     * @return 匹配起始位置或 -1
-     */
     private int findForward(String text, String query, int startIndex) {
         int matchStart = text.indexOf(query, Math.max(startIndex, 0));
         if (matchStart == -1 && startIndex > 0) {
@@ -408,13 +344,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         return matchStart;
     }
 
-    /**
-     * 向后查找匹配。
-     * @param text 全文
-     * @param query 查询关键字
-     * @param startIndex 起始索引
-     * @return 匹配起始位置或 -1
-     */
     private int findBackward(String text, String query, int startIndex) {
         int safeIndex = Math.min(Math.max(startIndex, 0), Math.max(text.length() - 1, 0));
         int matchStart = text.lastIndexOf(query, safeIndex);
@@ -424,10 +353,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         return matchStart;
     }
 
-    /**
-     * 获取底层编辑器实例。
-     * @return Editor 或 null
-     */
     private Editor getEditor() {
         if (consoleView instanceof ConsoleViewImpl consoleViewImpl) {
             return consoleViewImpl.getEditor();
@@ -435,9 +360,6 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
         return null;
     }
 
-    /**
-     * 释放资源。
-     */
     @Override
     public void dispose() {
         Disposer.dispose(consoleView);

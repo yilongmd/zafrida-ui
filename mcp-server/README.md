@@ -1,5 +1,7 @@
 # ZAFrida MCP Server
 
+> **维护状态：Legacy / feature-frozen。** 新的设备恢复、Python 环境和增量日志能力只在 `skills-template/zafrida-http-control/` 的 Skill + CLI 中扩展。MCP 适配器暂时保留现有 27 个工具，给已经注册它的客户端一个兼容窗口；计划在后续破坏性版本中单独移除。新接入请直接使用 Skill/CLI 和本地 HTTP API。
+
 将 ZAFrida Skills HTTP API 封装为 [MCP (Model Context Protocol)](https://modelcontextprotocol.io) 服务，支持 Claude Code、Cursor、Windsurf 等 AI 工具一键注册。
 
 ## 前置条件

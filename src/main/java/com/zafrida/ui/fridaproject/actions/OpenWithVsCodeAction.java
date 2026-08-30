@@ -13,9 +13,6 @@ import com.zafrida.ui.util.ZaFridaVsCodeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * [Action] 在 Project View 右键菜单中用 VS Code 打开选中项（文件/目录）。
- */
 public final class OpenWithVsCodeAction extends AnAction {
 
     @Override
@@ -68,4 +65,3 @@ public final class OpenWithVsCodeAction extends AnAction {
         return null;
     }
 }
-

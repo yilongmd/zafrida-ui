@@ -15,9 +15,6 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.Locale;
 
-/**
- * [UI组件] 环境医生单项诊断条目。
- */
 public final class EnvironmentDoctorItemPanel extends JPanel {
 
     private static final String CARD_SPINNER = "SPINNER";

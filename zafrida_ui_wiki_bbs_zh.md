@@ -31,7 +31,7 @@
 
 ### 0x00 先看结论：ZAFrida UI 是干嘛的？
 
-**ZAFrida UI 是一个集成到 PyCharm/IntelliJ 的 Frida 图形化插件：你在 JS 编辑区右键就能 Run/Attach 当前脚本，并且会根据脚本路径自动切换到对应的 ZAFrida 项目上下文（设备/包名/连接方式/参数）；同时提供右键 Snippets 和复选框模板系统，把 Hook 脚本当积木组装。**
+**ZAFrida UI 是一个集成到 PyCharm/IntelliJ 的 Frida 图形化插件：你在 JavaScript/TypeScript 编辑区右键就能 Run/Attach 当前脚本，并且会根据脚本路径自动切换到对应的 ZAFrida 项目上下文（设备/包名/连接方式/参数）；同时提供右键 Snippets 和复选框模板系统，把 Hook 脚本当积木组装。**
 
 [开源仓库](https://github.com/yilongmd/zafrida-ui)
 
@@ -62,7 +62,7 @@ IDE → Plugins → Marketplace → 搜索 **ZAFrida** → Install → 重启
 
 Doctor 默认检查：
 
-- Project Python SDK
+- Python Environment（活动 ZAFrida 项目覆盖优先，否则使用 IDE Interpreter）
 - Frida Tools Path
 - frida --version
 - frida-ls-devices
@@ -111,10 +111,10 @@ Project View 右键：
 
 ### 0x06 核心爽点：编辑器右键 Run/Attach
 
-打开任意 `.js` 文件 → 右键：
+打开任意 `.js` / `.ts` 文件 → 右键：
 
-- Run Frida JS
-- Attach Frida JS
+- Run Frida Script
+- Attach Frida Script
 
 >它会根据脚本所在路径自动切换到所属项目并执行。
 

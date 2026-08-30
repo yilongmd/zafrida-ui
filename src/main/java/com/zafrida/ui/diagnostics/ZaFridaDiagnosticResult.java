@@ -3,9 +3,6 @@ package com.zafrida.ui.diagnostics;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * [结果] 单项诊断结果。
- */
 public final class ZaFridaDiagnosticResult {
 
     private final @NotNull ZaFridaDiagnosticStatus status;

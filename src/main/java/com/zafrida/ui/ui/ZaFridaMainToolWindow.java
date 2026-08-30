@@ -1,8 +1,11 @@
 package com.zafrida.ui.ui;
 
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.icons.AllIcons;
 import com.zafrida.ui.util.ZaFridaIcons;
@@ -11,36 +14,28 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
-/**
- * [UI 根组件] ZAFrida ToolWindow 的顶层容器。
- * <p>
- * <strong>布局结构：</strong>
- * <ul>
- * <li><strong>Header:</strong> 顶部工具栏（创建项目、设置、全局运行控制）。</li>
- * <li><strong>TabPane:</strong> 中间选项卡（Run Panel / Template Panel）。</li>
- * <li><strong>Console:</strong> 底部日志控制台（Run/Attach 分离）。</li>
- * </ul>
- * <strong>职责：</strong> 负责各子组件的初始化、布局组装及全局按钮事件的分发。
- */
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+
 public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
 
-    /** 顶部选项卡面板 */
-    private final JBTabbedPane tabbedPane;
-    /** Run 面板 */
-    private final ZaFridaRunPanel runPanel;
-    /** 模板面板 */
-    private final ZaFridaTemplatePanel templatePanel;
-    /** 工具面板（不常用功能集合） */
-    private final ZaFridaToolsPanel toolsPanel;
-    /** 控制台选项卡面板 */
-    private final ZaFridaConsoleTabsPanel consoleTabsPanel;
+    private static final String MAIN_SPLITTER_PROPORTION_KEY = "zafrida.main.console.splitter.proportion";
+    private static final float FALLBACK_SPLITTER_PROPORTION = 0.5F;
+    private static final int MINIMUM_TOOL_WINDOW_WIDTH = 360;
+    private static final int PREFERRED_TOOL_WINDOW_WIDTH = 440;
+    private static final int MINIMUM_CONSOLE_HEIGHT = 180;
 
-    /**
-     * 构造函数。
-     * @param project 当前 IDE 项目
-     */
+    private final JBTabbedPane tabbedPane;
+    private final ZaFridaRunPanel runPanel;
+    private final ZaFridaTemplatePanel templatePanel;
+    private final ZaFridaToolsPanel toolsPanel;
+    private final ZaFridaConsoleTabsPanel consoleTabsPanel;
+    private volatile boolean disposed;
+
     public ZaFridaMainToolWindow(@NotNull Project project) {
         super(new BorderLayout());
+        setMinimumSize(new Dimension(JBUI.scale(MINIMUM_TOOL_WINDOW_WIDTH), 0));
+        setPreferredSize(new Dimension(JBUI.scale(PREFERRED_TOOL_WINDOW_WIDTH), JBUI.scale(760)));
 
         this.consoleTabsPanel = new ZaFridaConsoleTabsPanel(project);
         this.templatePanel = new ZaFridaTemplatePanel(project, consoleTabsPanel.getRunConsolePanel());
@@ -64,50 +59,86 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         topContainer.add(header, BorderLayout.NORTH);
         topContainer.add(tabbedPane, BorderLayout.CENTER);
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        splitPane.setTopComponent(topContainer);
-        splitPane.setBottomComponent(consoleTabsPanel);
-        splitPane.setResizeWeight(0.6);
-        splitPane.setDividerSize(JBUI.scale(4));
+        consoleTabsPanel.setMinimumSize(new Dimension(0, JBUI.scale(MINIMUM_CONSOLE_HEIGHT)));
+        OnePixelSplitter splitPane = new OnePixelSplitter(true, FALLBACK_SPLITTER_PROPORTION);
+        splitPane.setFirstComponent(topContainer);
+        splitPane.setSecondComponent(consoleTabsPanel);
+        splitPane.setDividerWidth(JBUI.scale(4));
+        splitPane.setHonorComponentsMinimumSize(true);
+        splitPane.setDividerPositionStrategy(Splitter.DividerPositionStrategy.KEEP_FIRST_SIZE);
         splitPane.setBorder(JBUI.Borders.empty());
+        configureInitialSplitterPosition(splitPane, topContainer);
 
         add(splitPane, BorderLayout.CENTER);
     }
 
-    /**
-     * 获取控制台选项卡面板。
-     * @return 控制台面板
-     */
     public @NotNull ZaFridaConsoleTabsPanel getConsoleTabsPanel() {
         return consoleTabsPanel;
     }
 
-    /**
-     * 获取 Run 面板。
-     * @return Run 面板
-     */
     public @NotNull ZaFridaRunPanel getRunPanel() {
         return runPanel;
     }
 
-    /**
-     * 获取模板面板。
-     * @return 模板面板
-     */
     public @NotNull ZaFridaTemplatePanel getTemplatePanel() {
         return templatePanel;
     }
 
-    /**
-     * 构建顶部工具栏区域。
-     * @return Header 面板
-     */
+    public boolean isDisposedForLifecycle() {
+        return disposed;
+    }
+
+    private void configureInitialSplitterPosition(@NotNull OnePixelSplitter splitPane,
+                                                  @NotNull JPanel topContainer) {
+        PropertiesComponent properties = PropertiesComponent.getInstance();
+        if (properties.isValueSet(MAIN_SPLITTER_PROPORTION_KEY)) {
+            splitPane.setAndLoadSplitterProportionKey(MAIN_SPLITTER_PROPORTION_KEY);
+            return;
+        }
+
+        splitPane.addComponentListener(new ComponentAdapter() {
+            private boolean initialized;
+
+            @Override
+            public void componentResized(ComponentEvent event) {
+                if (initialized) {
+                    return;
+                }
+                int availableHeight = splitPane.getHeight() - splitPane.getDividerWidth();
+                if (availableHeight <= 0) {
+                    return;
+                }
+                initialized = true;
+
+                int firstComponentHeight = topContainer.getPreferredSize().height;
+                int maximumFirstComponentHeight = availableHeight - JBUI.scale(MINIMUM_CONSOLE_HEIGHT);
+                if (firstComponentHeight > maximumFirstComponentHeight) {
+                    firstComponentHeight = maximumFirstComponentHeight;
+                }
+                if (firstComponentHeight < 0) {
+                    firstComponentHeight = 0;
+                }
+
+                float proportion = (float) firstComponentHeight / availableHeight;
+                if (proportion < splitPane.getMinimumProportion()) {
+                    proportion = splitPane.getMinimumProportion();
+                }
+                if (proportion > splitPane.getMaximumProportion()) {
+                    proportion = splitPane.getMaximumProportion();
+                }
+                splitPane.setProportion(proportion);
+                splitPane.setSplitterProportionKey(MAIN_SPLITTER_PROPORTION_KEY);
+                splitPane.removeComponentListener(this);
+            }
+        });
+    }
+
     private JPanel buildHeader() {
         JPanel header = new JPanel();
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
         header.setBorder(JBUI.Borders.empty(6, 8));
 
-        JPanel projectRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel projectRow = new JPanel(new GridLayout(1, 4, JBUI.scale(6), 0));
         JButton newProjectBtn = new JButton("New Project");
         newProjectBtn.setIcon(scaleIcon(ZaFridaIcons.FRIDA_PROJECT, 0.875F));
         newProjectBtn.setToolTipText("New Frida Project");
@@ -128,19 +159,17 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         doctorBtn.setToolTipText("Environment doctor");
         doctorBtn.addActionListener(e -> runPanel.openEnvironmentDoctorDialog());
 
-        /*JButton languageToggleBtn = new JButton(
-                IconLoader.getIcon("/META-INF/icons/lang-toggle.svg", ZaFridaMainToolWindow.class)
-        );
-        languageToggleBtn.setToolTipText("中文 / English");
-        languageToggleBtn.addActionListener(e -> runPanel.showLanguageToggleMessage());*/
+        tuneHeaderButton(newProjectBtn);
+        tuneHeaderButton(projectSettingsBtn);
+        tuneHeaderButton(globalSettingsBtn);
+        tuneHeaderButton(doctorBtn);
 
         projectRow.add(newProjectBtn);
         projectRow.add(projectSettingsBtn);
         projectRow.add(globalSettingsBtn);
         projectRow.add(doctorBtn);
-        // projectRow.add(languageToggleBtn);
 
-        JPanel runRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel runRow = new JPanel(new GridLayout(1, 4, JBUI.scale(6), 0));
         JButton runBtn = new JButton("Run");
         runBtn.setIcon(AllIcons.Actions.Execute);
         runBtn.addActionListener(e -> runPanel.triggerRun());
@@ -159,6 +188,11 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         openAppBtn.setToolTipText("Open App (adb)");
         openAppBtn.addActionListener(e -> runPanel.triggerOpenApp());
 
+        tuneHeaderButton(runBtn);
+        tuneHeaderButton(stopBtn);
+        tuneHeaderButton(forceStopBtn);
+        tuneHeaderButton(openAppBtn);
+
         runPanel.bindExternalRunStopButtons(runBtn, stopBtn);
 
         runRow.add(runBtn);
@@ -173,13 +207,11 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         return header;
     }
 
-    /**
-     * 对按钮图标做轻量等比缩放，用于与同排按钮视觉对齐。
-     *
-     * @param baseIcon 原始图标
-     * @param scale 缩放比例（0~1 表示缩小）
-     * @return 缩放后的图标
-     */
+    private static void tuneHeaderButton(@NotNull JButton button) {
+        button.setMargin(JBUI.insets(2, 2));
+        button.setIconTextGap(JBUI.scale(2));
+    }
+
     private static @NotNull Icon scaleIcon(@NotNull Icon baseIcon, float scale) {
         float effectiveScale = scale;
         if (effectiveScale <= 0.0F) {
@@ -211,12 +243,9 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         };
     }
 
-    /**
-     * 释放资源。
-     */
     @Override
     public void dispose() {
-        // children disposed via Disposer
-        // 子组件由 Disposer 统一释放
+        disposed = true;
+        // 子组件已注册到 Disposer，无需重复释放。
     }
 }

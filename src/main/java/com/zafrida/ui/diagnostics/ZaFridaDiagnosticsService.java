@@ -16,6 +16,7 @@ import com.zafrida.ui.frida.FridaOutputParsers;
 import com.zafrida.ui.frida.FridaProcessScope;
 import com.zafrida.ui.python.ProjectPythonEnvResolver;
 import com.zafrida.ui.python.PythonEnvInfo;
+import com.zafrida.ui.python.PythonEnvResolutionException;
 import com.zafrida.ui.settings.ZaFridaSettingsService;
 import com.zafrida.ui.settings.ZaFridaSettingsState;
 import com.zafrida.ui.util.ZaStrUtil;
@@ -34,16 +35,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-/**
- * [Service] 环境医生诊断任务编排器。
- */
 public final class ZaFridaDiagnosticsService {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaDiagnosticsService.class);
     private static final int POLL_INTERVAL_MS = 200;
 
     private static final String TIP_PYTHON_SDK =
-            "Tip: Configure Python Interpreter in Project Settings. (提示: 请在 Project Settings 配置 Python Interpreter，或切换到含 Python SDK 的项目。)";
+            "Tip: Configure the active ZAFrida project's Python environment, or configure the PyCharm project interpreter. "
+                    + "(提示: 请配置当前 ZAFrida 项目的 Python 环境，或配置 PyCharm 项目解释器。)";
     private static final String TIP_TOOL_PATH =
             "Tip: Set correct frida/frida-ps/frida-ls-devices path in ZAFrida Settings. (提示: 请在 ZAFrida Settings 中设置正确的 frida/frida-ps/frida-ls-devices 路径。)";
     private static final String TIP_FRIDA_VERSION =
@@ -65,10 +64,6 @@ public final class ZaFridaDiagnosticsService {
         this.settingsService = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
     }
 
-    /**
-     * 构建默认诊断项列表。
-     * @return 诊断项列表
-     */
     public @NotNull List<ZaFridaDiagnosticItem> createDefaultItems() {
         List<ZaFridaDiagnosticItem> items = new ArrayList<>();
 
@@ -85,8 +80,8 @@ public final class ZaFridaDiagnosticsService {
     private @NotNull ZaFridaDiagnosticItem buildPythonSdkItem() {
         return new ZaFridaDiagnosticItem(
                 "python-sdk",
-                "Project Python SDK",
-                "Resolve current project's Python interpreter (解析当前项目的 Python 解释器)",
+                "Python Environment",
+                "Resolve the active ZAFrida project's effective Python interpreter (解析当前 ZAFrida 项目的实际 Python 解释器)",
                 3_000,
                 new ZaFridaDiagnosticTask() {
                     @Override
@@ -172,13 +167,6 @@ public final class ZaFridaDiagnosticsService {
         );
     }
 
-    /**
-     * 在后台执行诊断流程。
-     * @param project 当前项目
-     * @param device  当前选中设备
-     * @param items   诊断项列表
-     * @param listener 状态监听
-     */
     public void runDiagnostics(@NotNull Project project,
                                @Nullable FridaDevice device,
                                @NotNull List<ZaFridaDiagnosticItem> items,
@@ -188,8 +176,21 @@ public final class ZaFridaDiagnosticsService {
         }
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             ZaFridaSettingsState settings = settingsService.getState();
-            PythonEnvInfo env = ProjectPythonEnvResolver.resolve(project);
-            ZaFridaDiagnosticsContext context = new ZaFridaDiagnosticsContext(project, device, settings, env);
+            PythonEnvInfo env = null;
+            String pythonEnvError = null;
+            try {
+                env = ProjectPythonEnvResolver.resolve(project);
+            } catch (PythonEnvResolutionException e) {
+                pythonEnvError = e.getMessage();
+                LOG.warn("Resolve configured ZAFrida Python environment failed", e);
+            }
+            ZaFridaDiagnosticsContext context = new ZaFridaDiagnosticsContext(
+                    project,
+                    device,
+                    settings,
+                    env,
+                    pythonEnvError
+            );
 
             for (ZaFridaDiagnosticItem item : items) {
                 if (item.isSkipRequested()) {
@@ -214,6 +215,9 @@ public final class ZaFridaDiagnosticsService {
     }
 
     private @NotNull ZaFridaDiagnosticResult checkPythonSdk(@NotNull ZaFridaDiagnosticsContext context) {
+        if (ZaStrUtil.isNotBlank(context.getPythonEnvError())) {
+            return ZaFridaDiagnosticResult.failed(context.getPythonEnvError(), TIP_PYTHON_SDK);
+        }
         PythonEnvInfo env = context.getPythonEnv();
         if (env == null) {
             return ZaFridaDiagnosticResult.failed("Project Python SDK not resolved (未解析到 Project Python SDK)", TIP_PYTHON_SDK);
@@ -222,10 +226,17 @@ public final class ZaFridaDiagnosticsService {
         if (ZaStrUtil.isBlank(home)) {
             return ZaFridaDiagnosticResult.failed("Python interpreter path is empty (Python 解释器路径为空)", TIP_PYTHON_SDK);
         }
-        return ZaFridaDiagnosticResult.success(String.format("Python: %s", home));
+        String source = "PyCharm project";
+        if (env.getSource() == PythonEnvInfo.Source.ZAFRIDA_PROJECT) {
+            source = "ZAFrida project override";
+        }
+        return ZaFridaDiagnosticResult.success(String.format("Python (%s): %s", source, home));
     }
 
     private @NotNull ZaFridaDiagnosticResult checkFridaToolPaths(@NotNull ZaFridaDiagnosticsContext context) {
+        if (ZaStrUtil.isNotBlank(context.getPythonEnvError())) {
+            return ZaFridaDiagnosticResult.failed(context.getPythonEnvError(), TIP_TOOL_PATH);
+        }
         ZaFridaSettingsState settings = context.getSettings();
         PythonEnvInfo env = context.getPythonEnv();
 
@@ -378,7 +389,7 @@ public final class ZaFridaDiagnosticsService {
             try {
                 return future.get(waitMs, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
-                // keep waiting
+                continue;
             } catch (java.util.concurrent.ExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause != null) {
@@ -451,6 +462,10 @@ public final class ZaFridaDiagnosticsService {
             return null;
         }
 
+        if (env != null && env.getSource() == PythonEnvInfo.Source.ZAFRIDA_PROJECT) {
+            return ProjectPythonEnvResolver.findTool(env, executableFileName(name));
+        }
+
         Path path;
         try {
             path = Paths.get(name);
@@ -467,12 +482,22 @@ public final class ZaFridaDiagnosticsService {
 
         if (env != null) {
             String found = ProjectPythonEnvResolver.findTool(env, name);
-            if (ZaStrUtil.isNotBlank(found)) {
-                return found;
-            }
+            return found;
         }
 
         return findOnPath(name);
+    }
+
+    private @NotNull String executableFileName(@NotNull String executable) {
+        try {
+            Path fileName = Paths.get(executable).getFileName();
+            if (fileName != null) {
+                return fileName.toString();
+            }
+        } catch (InvalidPathException e) {
+            LOG.debug(String.format("Cannot parse executable path, use original value: %s", executable), e);
+        }
+        return executable;
     }
 
     private @Nullable String findOnPath(@NotNull String tool) {

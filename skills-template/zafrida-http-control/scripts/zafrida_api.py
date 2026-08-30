@@ -1,38 +1,75 @@
 #!/usr/bin/env python3
-"""
-ZAFrida 本地 HTTP API 命令行助手（项目模板内置版本）。
+"""CLI for ZAFrida's loopback HTTP API."""
 
-默认地址：http://127.0.0.1:17839/zafrida/api/v1
-可通过 --base-url 或环境变量 ZAFRIDA_API_BASE 覆盖。
-"""
 from __future__ import annotations
 
 import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:17839/zafrida/api/v1"
+DEFAULT_REQUEST_TIMEOUT = 30.0
 
 
 def normalize_base_url(raw: str) -> str:
-    text = raw.strip()
-    if text.endswith("/"):
-        text = text[:-1]
-    return text
+    return raw.strip().rstrip("/")
 
 
-def call_api(base_url: str, endpoint: str, method: str, params: Dict[str, str]) -> Tuple[int, Dict]:
-    """发送 HTTP 请求并返回 (状态码, JSON 响应)。"""
+def transport_error(message: str) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "status": 0,
+        "errorCode": "API_UNREACHABLE",
+        "retryable": True,
+        "message": message,
+    }
+
+
+def decode_response(status: int, raw: str) -> Tuple[int, Dict[str, Any]]:
+    if not raw:
+        return status, {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return status, {
+            "ok": False,
+            "status": status,
+            "errorCode": "INVALID_JSON_RESPONSE",
+            "retryable": status >= 500,
+            "message": f"ZAFrida returned invalid JSON: {exc}",
+            "raw": raw[:4000],
+        }
+    if not isinstance(payload, dict):
+        return status, {
+            "ok": False,
+            "status": status,
+            "errorCode": "INVALID_JSON_RESPONSE",
+            "retryable": False,
+            "message": "ZAFrida returned a non-object JSON response",
+        }
+    return status, payload
+
+
+def call_api_once(
+    base_url: str,
+    endpoint: str,
+    method: str,
+    params: Dict[str, str],
+    timeout: float,
+) -> Tuple[int, Dict[str, Any]]:
     url = f"{normalize_base_url(base_url)}{endpoint}"
     data = None
-    headers = {"Accept": "application/json"}
-
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "ZAFrida-Skill-CLI/2",
+    }
     if method == "GET":
         if params:
             url = f"{url}?{urllib.parse.urlencode(params)}"
@@ -40,258 +77,345 @@ def call_api(base_url: str, endpoint: str, method: str, params: Dict[str, str]) 
         data = urllib.parse.urlencode(params).encode("utf-8")
         headers["Content-Type"] = "application/x-www-form-urlencoded"
 
-    request = urllib.request.Request(url=url, method=method, data=data, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            text = response.read().decode("utf-8", errors="replace")
-            if not text:
-                return response.status, {}
-            return response.status, json.loads(text)
+        request = urllib.request.Request(url=url, method=method, data=data, headers=headers)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return decode_response(response.status, raw)
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", errors="replace")
-        if raw:
-            try:
-                return exc.code, json.loads(raw)
-            except json.JSONDecodeError:
-                pass
-        return exc.code, {"ok": False, "status": exc.code, "message": raw or str(exc)}
-    except urllib.error.URLError as exc:
-        return 0, {"ok": False, "status": 0, "message": str(exc)}
+        return decode_response(exc.code, raw or str(exc))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return 0, transport_error(str(exc))
 
 
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--base-url",
-        default=os.environ.get("ZAFRIDA_API_BASE", DEFAULT_BASE_URL),
-        help="API 基础地址",
-    )
-    parser.add_argument("--compact", action="store_true", help="输出紧凑 JSON（无缩进）")
+def call_api(
+    base_url: str,
+    endpoint: str,
+    method: str = "GET",
+    params: Optional[Dict[str, str]] = None,
+    timeout: float = DEFAULT_REQUEST_TIMEOUT,
+    retries: int = 0,
+    retry_delay: float = 1.0,
+) -> Tuple[int, Dict[str, Any]]:
+    payload = params or {}
+    safe_to_retry = method == "GET" or endpoint == "/python-environment/test"
+    attempts = max(0, retries) + 1
+    last_status = 0
+    last_payload: Dict[str, Any] = transport_error("No request attempted")
+    for attempt in range(attempts):
+        last_status, last_payload = call_api_once(base_url, endpoint, method, payload, timeout)
+        if "retryable" in last_payload:
+            retryable = bool(last_payload.get("retryable"))
+        else:
+            retryable = last_status == 0 or last_status >= 500
+        if not safe_to_retry or not retryable or attempt + 1 >= attempts:
+            break
+        delay = min(5.0, max(0.0, retry_delay) * (2 ** attempt))
+        if delay > 0:
+            time.sleep(delay)
+    return last_status, last_payload
 
 
-def print_json(payload: Dict, compact: bool) -> None:
+def print_json(payload: Dict[str, Any], compact: bool) -> None:
     if compact:
         print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     else:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="ZAFrida API 命令行助手")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+def add_path_and_limit(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--path", help="日志文件路径；省略时使用当前会话日志")
+    parser.add_argument("--max-bytes", type=int, default=0, help="最多读取的字节数")
 
-    # ── 状态与健康 ──
-    sub.add_parser("health", help="健康检查")
-    sub.add_parser("state", help="完整状态汇总（含日志文件大小）")
-    sub.add_parser("diagnostics", help="运行环境诊断（6 项检查）")
 
-    # ── 项目管理 ──
-    sub.add_parser("project-current", help="当前活跃项目")
+def build_command_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="ZAFrida 本地 API 命令行助手")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    project_select = sub.add_parser("project-select", help="切换活跃项目")
-    project_select.add_argument("--name", required=True, help="项目名称")
+    for name, help_text in (
+        ("health", "健康检查"),
+        ("capabilities", "查询 API 能力与限制"),
+        ("state", "完整状态汇总"),
+        ("session-status", "Run/Attach 会话状态"),
+        ("diagnostics", "环境诊断"),
+        ("project-current", "当前项目和项目列表"),
+        ("python-env-current", "当前有效 Python 环境"),
+        ("devices", "列出 Frida 设备"),
+        ("run", "启动 Run 会话"),
+        ("stop", "停止 Run 会话"),
+        ("attach", "启动 Attach 会话"),
+        ("stop-attach", "停止 Attach 会话"),
+        ("run-log-path", "当前 Run 日志路径"),
+        ("attach-log-path", "当前 Attach 日志路径"),
+    ):
+        sub.add_parser(name, help=help_text)
+
+    project_select = sub.add_parser("project-select", help="切换当前项目")
+    project_select.add_argument("--name", required=True)
 
     project_create = sub.add_parser("project-create", help="新建项目")
-    project_create.add_argument("--name", required=True, help="项目名称")
-    project_create.add_argument("--platform", default="android", choices=["android", "ios"], help="目标平台")
+    project_create.add_argument("--name", required=True)
+    project_create.add_argument("--platform", choices=["android", "ios"], default="android")
 
-    # ── 设备与进程 ──
-    sub.add_parser("devices", help="列出所有已连接设备")
+    python_set = sub.add_parser("python-env-set", help="设置当前项目 Python 环境；空字符串恢复 IDE 默认")
+    python_set.add_argument("--path", default="")
 
-    processes_cmd = sub.add_parser("processes", help="列出当前设备的进程/应用")
-    processes_cmd.add_argument("--scope", default="running", choices=["running", "apps", "installed"], help="列表范围（默认 running）")
+    python_test = sub.add_parser("python-env-test", help="测试当前或指定 Python 环境中的 Frida 工具")
+    python_test.add_argument("--path")
+
+    processes = sub.add_parser("processes", help="列出当前设备进程或应用")
+    processes.add_argument("--scope", choices=["running", "apps", "installed"], default="running")
 
     device_select = sub.add_parser("device-select", help="选择设备")
     device_group = device_select.add_mutually_exclusive_group(required=True)
-    device_group.add_argument("--id", help="设备 ID")
-    device_group.add_argument("--host", help="远程设备地址")
+    device_group.add_argument("--id")
+    device_group.add_argument("--host")
 
     mode_set = sub.add_parser("mode-set", help="设置连接模式")
-    mode_set.add_argument("--mode", required=True, choices=["usb", "remote", "gadget"], help="连接模式")
-    mode_set.add_argument("--host", help="远程主机地址")
-    mode_set.add_argument("--port", type=int, help="远程端口")
+    mode_set.add_argument("--mode", choices=["usb", "remote", "gadget"], required=True)
+    mode_set.add_argument("--host")
+    mode_set.add_argument("--port", type=int)
 
-    # ── 脚本与参数 ──
-    target_set = sub.add_parser("target-set", help="设置目标应用包名")
-    target_set.add_argument("--target", default="", help="目标包名")
+    target_set = sub.add_parser("target-set", help="设置目标包名")
+    target_set.add_argument("--target", default="")
 
-    run_script_set = sub.add_parser("run-script-set", help="设置 Run 脚本路径")
-    run_script_set.add_argument("--path", required=True, help="脚本绝对路径")
+    for command, help_text in (
+        ("run-script-set", "设置 Run 脚本"),
+        ("attach-script-set", "设置 Attach 脚本"),
+    ):
+        script = sub.add_parser(command, help=help_text)
+        script.add_argument("--path", required=True)
 
-    attach_script_set = sub.add_parser("attach-script-set", help="设置 Attach 脚本路径")
-    attach_script_set.add_argument("--path", required=True, help="脚本绝对路径")
+    extra = sub.add_parser("extra-set", help="设置 Frida 额外参数")
+    extra.add_argument("--value", default="")
 
-    extra_set = sub.add_parser("extra-set", help="设置额外命令行参数")
-    extra_set.add_argument("--value", default="", help="参数值")
+    for command, help_text in (
+        ("adb-force-stop", "ADB 强制停止应用"),
+        ("adb-open-app", "ADB 启动应用"),
+    ):
+        adb = sub.add_parser(command, help=help_text)
+        adb.add_argument("--target")
 
-    # ── ADB 操作 ──
-    adb_fs = sub.add_parser("adb-force-stop", help="ADB 强制停止应用")
-    adb_fs.add_argument("--target", help="目标包名（默认使用当前 target）")
+    clear = sub.add_parser("console-clear", help="清空控制台")
+    clear.add_argument("--type", choices=["run", "attach"], default="run")
 
-    adb_oa = sub.add_parser("adb-open-app", help="ADB 启动应用")
-    adb_oa.add_argument("--target", help="目标包名（默认使用当前 target）")
+    for command in ("run-log-content", "attach-log-content"):
+        add_path_and_limit(sub.add_parser(command, help="读取日志内容"))
 
-    # ── 会话控制 ──
-    sub.add_parser("run", help="启动 Run 会话")
-    sub.add_parser("stop", help="停止 Run 会话")
-    sub.add_parser("attach", help="启动 Attach 会话")
-    sub.add_parser("stop-attach", help="停止 Attach 会话")
+    for command in ("run-log-lines", "attach-log-lines"):
+        lines = sub.add_parser(command, help="按行读取日志")
+        lines.add_argument("--path")
+        lines.add_argument("--start", type=int, default=1)
+        lines.add_argument("--count", type=int, default=100)
 
-    # ── 控制台 ──
-    console_clear = sub.add_parser("console-clear", help="清空控制台")
-    console_clear.add_argument("--type", default="run", choices=["run", "attach"], help="控制台类型（默认 run）")
+    for command in ("run-log-tail", "attach-log-tail"):
+        tail = sub.add_parser(command, help="读取日志尾部或从字节游标增量读取")
+        tail.add_argument("--path")
+        tail.add_argument("--offset", type=int)
+        tail.add_argument("--max-bytes", type=int, default=65536)
 
-    # ── 日志读取 ──
-    sub.add_parser("run-log-path", help="获取 Run 日志路径和文件大小")
-    sub.add_parser("attach-log-path", help="获取 Attach 日志路径和文件大小")
+    logs = sub.add_parser("logs-list", help="列出当前 IDE 项目中的历史会话日志")
+    logs.add_argument("--type", choices=["all", "run", "attach"], default="all")
+    logs.add_argument("--limit", type=int, default=50)
 
-    run_log_content = sub.add_parser("run-log-content", help="读取 Run 日志内容")
-    run_log_content.add_argument("--path", help="覆盖日志文件路径")
-    run_log_content.add_argument("--max-bytes", type=int, default=0, help="仅读取末尾 N 字节（0=全部）")
+    wait_device = sub.add_parser("wait-device", help="等待设备出现，适合 USB/网络抖动恢复")
+    wait_group = wait_device.add_mutually_exclusive_group()
+    wait_group.add_argument("--id")
+    wait_group.add_argument("--host")
+    wait_device.add_argument("--type", dest="device_type")
+    wait_device.add_argument("--timeout", type=float, default=60.0)
+    wait_device.add_argument("--interval", type=float, default=2.0)
 
-    attach_log_content = sub.add_parser("attach-log-content", help="读取 Attach 日志内容")
-    attach_log_content.add_argument("--path", help="覆盖日志文件路径")
-    attach_log_content.add_argument("--max-bytes", type=int, default=0, help="仅读取末尾 N 字节（0=全部）")
+    wait_session = sub.add_parser("wait-session", help="等待 Run/Attach 进入 running 或 stopped")
+    wait_session.add_argument("--type", choices=["run", "attach"], required=True)
+    wait_session.add_argument("--state", choices=["running", "stopped"], required=True)
+    wait_session.add_argument("--timeout", type=float, default=30.0)
+    wait_session.add_argument("--interval", type=float, default=0.5)
+    return parser
 
-    run_log_lines = sub.add_parser("run-log-lines", help="按行读取 Run 日志")
-    run_log_lines.add_argument("--path", help="覆盖日志文件路径")
-    run_log_lines.add_argument("--start", type=int, default=1, help="起始行号（1-based，默认 1）")
-    run_log_lines.add_argument("--count", type=int, default=100, help="读取行数（默认 100，上限 2000）")
 
-    attach_log_lines = sub.add_parser("attach-log-lines", help="按行读取 Attach 日志")
-    attach_log_lines.add_argument("--path", help="覆盖日志文件路径")
-    attach_log_lines.add_argument("--start", type=int, default=1, help="起始行号（1-based，默认 1）")
-    attach_log_lines.add_argument("--count", type=int, default=100, help="读取行数（默认 100，上限 2000）")
-
-    add_common_args(parser)
-    args = parser.parse_args()
-
-    cmd = args.cmd
-    method = "GET"
-    endpoint = ""
+def route_command(args: argparse.Namespace) -> Tuple[str, str, Dict[str, str]]:
+    routes = {
+        "health": ("GET", "/health"),
+        "capabilities": ("GET", "/capabilities"),
+        "state": ("GET", "/state"),
+        "session-status": ("GET", "/session/status"),
+        "diagnostics": ("GET", "/diagnostics"),
+        "project-current": ("GET", "/project/current"),
+        "project-select": ("POST", "/project/select"),
+        "project-create": ("POST", "/project/create"),
+        "python-env-current": ("GET", "/python-environment/current"),
+        "python-env-set": ("POST", "/project/python-environment/set"),
+        "python-env-test": ("POST", "/python-environment/test"),
+        "devices": ("GET", "/devices"),
+        "processes": ("GET", "/processes"),
+        "device-select": ("POST", "/device/select"),
+        "mode-set": ("POST", "/connection-mode/set"),
+        "target-set": ("POST", "/target/set"),
+        "run-script-set": ("POST", "/run-script/set"),
+        "attach-script-set": ("POST", "/attach-script/set"),
+        "extra-set": ("POST", "/extra-args/set"),
+        "adb-force-stop": ("POST", "/adb/force-stop"),
+        "adb-open-app": ("POST", "/adb/open-app"),
+        "run": ("POST", "/run"),
+        "stop": ("POST", "/stop"),
+        "attach": ("POST", "/attach"),
+        "stop-attach": ("POST", "/stop-attach"),
+        "console-clear": ("POST", "/console/clear"),
+        "run-log-path": ("GET", "/run-log/path"),
+        "attach-log-path": ("GET", "/attach-log/path"),
+        "run-log-content": ("GET", "/run-log/content"),
+        "attach-log-content": ("GET", "/attach-log/content"),
+        "run-log-lines": ("GET", "/run-log/lines"),
+        "attach-log-lines": ("GET", "/attach-log/lines"),
+        "run-log-tail": ("GET", "/run-log/tail"),
+        "attach-log-tail": ("GET", "/attach-log/tail"),
+        "logs-list": ("GET", "/logs/list"),
+    }
+    method, endpoint = routes[args.command]
     params: Dict[str, str] = {}
-
-    if cmd == "health":
-        endpoint = "/health"
-    elif cmd == "state":
-        endpoint = "/state"
-    elif cmd == "diagnostics":
-        endpoint = "/diagnostics"
-    elif cmd == "devices":
-        endpoint = "/devices"
-    elif cmd == "processes":
-        endpoint = "/processes"
-        if args.scope != "running":
-            params["scope"] = args.scope
-    elif cmd == "project-current":
-        endpoint = "/project/current"
-    elif cmd == "project-select":
-        method = "POST"
-        endpoint = "/project/select"
-        params["name"] = args.name
-    elif cmd == "project-create":
-        method = "POST"
-        endpoint = "/project/create"
-        params["name"] = args.name
-        params["platform"] = args.platform
-    elif cmd == "device-select":
-        method = "POST"
-        endpoint = "/device/select"
-        if args.id:
-            params["id"] = args.id
-        if args.host:
-            params["host"] = args.host
-    elif cmd == "mode-set":
-        method = "POST"
-        endpoint = "/connection-mode/set"
+    for source, target in (
+        ("name", "name"),
+        ("platform", "platform"),
+        ("path", "path"),
+        ("scope", "scope"),
+        ("id", "id"),
+        ("host", "host"),
+        ("port", "port"),
+        ("target", "target"),
+        ("value", "value"),
+        ("type", "type"),
+        ("start", "start"),
+        ("count", "count"),
+        ("offset", "offset"),
+        ("max_bytes", "maxBytes"),
+        ("limit", "limit"),
+    ):
+        if not hasattr(args, source):
+            continue
+        value = getattr(args, source)
+        if value is not None:
+            params[target] = str(value)
+    if args.command == "mode-set":
         params["mode"] = args.mode
-        if args.host:
-            params["host"] = args.host
-        if args.port is not None:
-            params["port"] = str(args.port)
-    elif cmd == "target-set":
-        method = "POST"
-        endpoint = "/target/set"
-        params["target"] = args.target
-    elif cmd == "run-script-set":
-        method = "POST"
-        endpoint = "/run-script/set"
-        params["path"] = args.path
-    elif cmd == "attach-script-set":
-        method = "POST"
-        endpoint = "/attach-script/set"
-        params["path"] = args.path
-    elif cmd == "extra-set":
-        method = "POST"
-        endpoint = "/extra-args/set"
-        params["value"] = args.value
-    elif cmd == "adb-force-stop":
-        method = "POST"
-        endpoint = "/adb/force-stop"
-        if args.target:
-            params["target"] = args.target
-    elif cmd == "adb-open-app":
-        method = "POST"
-        endpoint = "/adb/open-app"
-        if args.target:
-            params["target"] = args.target
-    elif cmd == "console-clear":
-        method = "POST"
-        endpoint = "/console/clear"
-        if args.type != "run":
-            params["type"] = args.type
-    elif cmd == "run":
-        method = "POST"
-        endpoint = "/run"
-    elif cmd == "stop":
-        method = "POST"
-        endpoint = "/stop"
-    elif cmd == "attach":
-        method = "POST"
-        endpoint = "/attach"
-    elif cmd == "stop-attach":
-        method = "POST"
-        endpoint = "/stop-attach"
-    elif cmd == "run-log-path":
-        endpoint = "/run-log/path"
-    elif cmd == "attach-log-path":
-        endpoint = "/attach-log/path"
-    elif cmd == "run-log-content":
-        endpoint = "/run-log/content"
-        if args.path:
-            params["path"] = args.path
-        if args.max_bytes > 0:
-            params["maxBytes"] = str(args.max_bytes)
-    elif cmd == "attach-log-content":
-        endpoint = "/attach-log/content"
-        if args.path:
-            params["path"] = args.path
-        if args.max_bytes > 0:
-            params["maxBytes"] = str(args.max_bytes)
-    elif cmd == "run-log-lines":
-        endpoint = "/run-log/lines"
-        if args.path:
-            params["path"] = args.path
-        if args.start > 1:
-            params["start"] = str(args.start)
-        if args.count != 100:
-            params["count"] = str(args.count)
-    elif cmd == "attach-log-lines":
-        endpoint = "/attach-log/lines"
-        if args.path:
-            params["path"] = args.path
-        if args.start > 1:
-            params["start"] = str(args.start)
-        if args.count != 100:
-            params["count"] = str(args.count)
+    return method, endpoint, params
+
+
+def response_data(payload: Dict[str, Any]) -> Dict[str, Any]:
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
+    return {}
+
+
+def wait_for_device(common: argparse.Namespace, args: argparse.Namespace) -> Tuple[int, Dict[str, Any]]:
+    started = time.monotonic()
+    attempts = 0
+    last_payload: Dict[str, Any] = {}
+    while time.monotonic() - started <= max(0.0, args.timeout):
+        attempts += 1
+        status, payload = call_api(common.base_url, "/devices", timeout=max(0.1, common.request_timeout))
+        last_payload = payload
+        if payload.get("ok") is True:
+            devices = response_data(payload).get("devices", [])
+            for device in devices if isinstance(devices, list) else []:
+                if not isinstance(device, dict):
+                    continue
+                if args.id and device.get("id") != args.id:
+                    continue
+                if args.host and device.get("host") != args.host:
+                    continue
+                if args.device_type and str(device.get("type", "")).lower() != args.device_type.lower():
+                    continue
+                elapsed = int((time.monotonic() - started) * 1000)
+                return 200, {
+                    "ok": True,
+                    "status": 200,
+                    "data": {"device": device, "attempts": attempts, "elapsedMs": elapsed},
+                }
+        elif not payload.get("retryable") and status not in (0, 503, 504):
+            return status, payload
+        remaining = args.timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            break
+        time.sleep(min(max(0.1, args.interval), remaining))
+    return 408, {
+        "ok": False,
+        "status": 408,
+        "errorCode": "WAIT_DEVICE_TIMEOUT",
+        "retryable": True,
+        "message": f"No matching device appeared within {args.timeout:g}s",
+        "data": {"attempts": attempts, "lastResponse": last_payload},
+    }
+
+
+def wait_for_session(common: argparse.Namespace, args: argparse.Namespace) -> Tuple[int, Dict[str, Any]]:
+    started = time.monotonic()
+    attempts = 0
+    last_payload: Dict[str, Any] = {}
+    while time.monotonic() - started <= max(0.0, args.timeout):
+        attempts += 1
+        status, payload = call_api(common.base_url, "/session/status", timeout=max(0.1, common.request_timeout))
+        last_payload = payload
+        if payload.get("ok") is True:
+            session = response_data(payload).get(args.type)
+            if isinstance(session, dict) and session.get("state") == args.state:
+                elapsed = int((time.monotonic() - started) * 1000)
+                return 200, {
+                    "ok": True,
+                    "status": 200,
+                    "data": {"type": args.type, "session": session, "attempts": attempts, "elapsedMs": elapsed},
+                }
+        elif not payload.get("retryable") and status not in (0, 503, 504):
+            return status, payload
+        remaining = args.timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            break
+        time.sleep(min(max(0.1, args.interval), remaining))
+    return 408, {
+        "ok": False,
+        "status": 408,
+        "errorCode": "WAIT_SESSION_TIMEOUT",
+        "retryable": True,
+        "message": f"{args.type} did not reach {args.state} within {args.timeout:g}s",
+        "data": {"attempts": attempts, "lastResponse": last_payload},
+    }
+
+
+def parse_common_args(argv: list[str]) -> Tuple[argparse.Namespace, list[str]]:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--base-url", default=os.environ.get("ZAFRIDA_API_BASE", DEFAULT_BASE_URL))
+    parser.add_argument("--request-timeout", type=float, default=DEFAULT_REQUEST_TIMEOUT)
+    parser.add_argument("--retries", type=int, default=0)
+    parser.add_argument("--retry-delay", type=float, default=1.0)
+    parser.add_argument("--compact", action="store_true")
+    return parser.parse_known_args(argv)
+
+
+def main() -> int:
+    common, remaining = parse_common_args(sys.argv[1:])
+    parser = build_command_parser()
+    args = parser.parse_args(remaining)
+
+    if args.command == "wait-device":
+        status, payload = wait_for_device(common, args)
+    elif args.command == "wait-session":
+        status, payload = wait_for_session(common, args)
     else:
-        print(f"未知命令: {cmd}", file=sys.stderr)
-        return 2
+        method, endpoint, params = route_command(args)
+        status, payload = call_api(
+            common.base_url,
+            endpoint,
+            method,
+            params,
+            timeout=max(0.1, common.request_timeout),
+            retries=max(0, common.retries),
+            retry_delay=max(0.0, common.retry_delay),
+        )
 
-    status, payload = call_api(args.base_url, endpoint, method, params)
-    print_json(payload, args.compact)
-
-    ok = payload.get("ok")
-    if status == 0 or ok is False:
+    print_json(payload, common.compact)
+    if status < 200 or status >= 300 or payload.get("ok") is not True:
         return 1
     return 0
 

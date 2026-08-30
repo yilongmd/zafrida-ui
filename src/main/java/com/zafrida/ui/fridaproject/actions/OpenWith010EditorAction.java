@@ -15,16 +15,12 @@ import com.zafrida.ui.util.ZaFridaNotifier;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * [Action] 在 Project View 右键菜单中用 010 Editor 打开选中文件。
- */
 public final class OpenWith010EditorAction extends AnAction {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
         e.getPresentation().setVisible(true);
-        // ProjectView 右键菜单里获取“选中文件”数据不稳定（经常只能拿到目录），
-        // 这里保持始终可点击，具体校验放到 actionPerformed 中。
+        // Project View 的文件 DataKey 不稳定，保持可点击并在执行阶段校验。
         e.getPresentation().setEnabled(true);
     }
 
@@ -54,8 +50,7 @@ public final class OpenWith010EditorAction extends AnAction {
     }
 
     private static @Nullable VirtualFile resolveSelectedVirtualFile(@NotNull AnActionEvent e) {
-        // ProjectView 右键菜单里，有些 DataKey 会返回“所在目录”而不是“选中文件”。
-        // 对于“打开文件”类 Action，要优先解析到具体文件，其次才兜底目录。
+        // 某些 DataKey 返回所在目录，因此优先解析具体文件。
         VirtualFile dirCandidate = null;
 
         PsiFile psiFile = e.getData(CommonDataKeys.PSI_FILE);

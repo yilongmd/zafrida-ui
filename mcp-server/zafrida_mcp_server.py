@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ZAFrida MCP Server — 将 ZAFrida HTTP API 封装为 MCP 工具。
+ZAFrida MCP Server — legacy、feature-frozen 的 HTTP API 兼容适配器。
 
 注册方式（Claude Code）：
     claude mcp add zafrida -- python3 /path/to/zafrida_mcp_server.py

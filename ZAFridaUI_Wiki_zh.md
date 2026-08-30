@@ -83,7 +83,7 @@
 
 1. **Project**：选择你刚创建的项目  
 2. **Device**：刷新并选择设备  
-3. **Run Script**：选择该项目目录下默认生成的 `xxx.js`（或你自己的 `agent.js`）  
+3. **Run Script**：选择该项目目录下默认生成的 `xxx.js`，也可选择自己的 `agent.js` / `agent.ts`
 4. **Target**：填包名/进程名（通常是包名）
 
 然后点：
@@ -124,13 +124,16 @@
 - IntelliJ IDEA 也可，但需要安装/启用 **Python 插件**（否则 Doctor 可能无法解析 Python SDK）
 ---
 
-### 0x01 Python 环境（强烈建议用 venv/conda）
+### 0x01 Python 环境
 
-最小要求：当前 IDE 项目能解析到 Python Interpreter。
+默认使用当前 PyCharm 项目的 Python Interpreter。每个 ZAFrida Project 也可在 `Project Settings -> Python Environment` 单独选择解释器文件或环境根目录，并用 `Test` 确认实际 Frida 版本。
+
+支持本地 system/pyenv、venv/virtualenv、Conda、uv、Poetry、Pipenv、Hatch。多个 ZAFrida Project 可以选择同一路径共享环境，不会复制 venv。SSH、Docker、Docker Compose、WSL 等远程解释器暂不支持本机 Frida 子进程。
 ```bash
-pip install frida={建议指定版本，如 16.5.7}
-pip install frida-tools={与 frida 版本匹配的 frida-tools, 详细请查看官方文档/对照表}
+python -m pip install frida frida-tools
 ```
+
+长期项目建议在各自环境中用 `==` 固定已经验证过的 `frida` / `frida-tools` 组合。
 
 验证：
 
@@ -138,6 +141,8 @@ pip install frida-tools={与 frida 版本匹配的 frida-tools, 详细请查看�
 frida --version
 frida-ls-devices
 ```
+
+Frida 17 的 frida-tools REPL 可直接加载 `.ts`；Frida 16 环境请先用 `frida-compile` 生成 `.js`。ZAFrida 不会在两个环境之间静默回退。
 
 ---
 
@@ -207,14 +212,15 @@ Environment Doctor 用来把“环境问题”变成**可定位的检查项**。
 
 ### 0x01 常见失败怎么修
 
-#### A. Project Python SDK 失败
+#### A. Python Environment 失败
 
-- IDE → Settings → Python Interpreter  
-- 选一个有效解释器（venv/conda 都行）
+- 未配置项目覆盖时：IDE → Settings → Python Interpreter，选择有效的本地解释器。
+- 已配置项目覆盖时：ZAFrida `Project Settings` 检查路径并点击 `Test`。
+- 当前 IDE 环境和显式项目环境都不会回退到系统 PATH 中的另一套 Frida；请在实际选择的环境中安装匹配版本的 `frida-tools`。
 
 #### B. Frida Tools Path / frida --version 失败
 
-- 确认你当前 Python 环境里已安装：`pip show frida-tools`
+- 确认当前项目选中的 Python 环境里已安装：`pip show frida-tools`
 - 或在 ZAFrida Settings 手动指定 `frida / frida-ps / frida-ls-devices` 路径
 
 #### C. frida-ls-devices 失败
@@ -348,10 +354,10 @@ Run 面板负责把 frida-tools 的常用参数变成“可视化字段”。
 
 ### 0x00 两个菜单
 
-在任意 `.js` 编辑器里右键：
+在任意 `.js` / `.ts` 编辑器里右键：
 
-- **Run Frida JS**
-- **Attach Frida JS**
+- **Run Frida Script**
+- **Attach Frida Script**
 
 执行前会自动保存文件。
 
@@ -406,7 +412,7 @@ Run 面板负责把 frida-tools 的常用参数变成“可视化字段”。
 
 ### 0x00 在哪里？
 
-在 `.js` 编辑器里右键：
+在 `.js` / `.ts` 编辑器里右键：
 
 - **ZAFrida Frida Snippets**（子菜单）
 
@@ -769,7 +775,7 @@ ZAFrida 会通过 IDE 的 Balloon Notification 提示你“当前操作为什么
 
 ### 0x00 先看结论：ZAFrida UI 是干嘛的？
 
-**ZAFrida UI 是一个集成到 PyCharm/IntelliJ 的 Frida 图形化插件：你在 JS 编辑区右键就能 Run/Attach 当前脚本，并且会根据脚本路径自动切换到对应的 ZAFrida 项目上下文（设备/包名/连接方式/参数）；同时提供右键 Snippets 和复选框模板系统，把 Hook 脚本当积木组装。**
+**ZAFrida UI 是一个集成到 PyCharm/IntelliJ 的 Frida 图形化插件：你在 JavaScript/TypeScript 编辑区右键就能 Run/Attach 当前脚本，并且会根据脚本路径自动切换到对应的 ZAFrida 项目上下文（设备/包名/连接方式/参数）；同时提供右键 Snippets 和复选框模板系统，把 Hook 脚本当积木组装。**
 这也非常方便我们应对多个 App、多台设备、多种连接模式的调试场景。
 
 ![](doc/home.png "home")
@@ -799,7 +805,7 @@ IDE → Plugins → Marketplace → 搜索 **ZAFrida** → Install → 重启
 
 Doctor 默认检查：
 
-- Project Python SDK
+- Python Environment（活动 ZAFrida 项目覆盖优先，否则使用 IDE Interpreter）
 - Frida Tools Path
 - frida --version
 - frida-ls-devices
@@ -848,10 +854,10 @@ Project View 右键：
 
 ### 0x06 核心爽点：编辑器右键 Run/Attach
 
-打开任意 `.js` 文件 → 右键：
+打开任意 `.js` / `.ts` 文件 → 右键：
 
-- Run Frida JS
-- Attach Frida JS
+- Run Frida Script
+- Attach Frida Script
 
 它会根据脚本路径自动切换到所属项目并执行。这对多个 App、多台设备、多种连接模式的调试场景尤其方便。
 

@@ -3,15 +3,17 @@ package com.zafrida.ui.api;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.zafrida.ui.adb.AdbService;
 import com.zafrida.ui.diagnostics.ZaFridaDiagnosticItem;
 import com.zafrida.ui.diagnostics.ZaFridaDiagnosticStatus;
 import com.zafrida.ui.diagnostics.ZaFridaDiagnosticsListener;
 import com.zafrida.ui.diagnostics.ZaFridaDiagnosticsService;
 import com.zafrida.ui.frida.FridaCliService;
+import com.zafrida.ui.frida.FridaCliException;
 import com.zafrida.ui.frida.FridaConnectionMode;
 import com.zafrida.ui.frida.FridaDevice;
 import com.zafrida.ui.frida.FridaDeviceMode;
@@ -21,12 +23,18 @@ import com.zafrida.ui.fridaproject.ZaFridaFridaProject;
 import com.zafrida.ui.fridaproject.ZaFridaPlatform;
 import com.zafrida.ui.fridaproject.ZaFridaProjectConfig;
 import com.zafrida.ui.fridaproject.ZaFridaProjectManager;
+import com.zafrida.ui.logging.ZaFridaLogPaths;
+import com.zafrida.ui.python.ProjectPythonEnvResolver;
+import com.zafrida.ui.python.PythonEnvInfo;
+import com.zafrida.ui.python.PythonEnvResolutionException;
 import com.zafrida.ui.settings.ZaFridaSettingsService;
 import com.zafrida.ui.settings.ZaFridaSettingsState;
 import com.zafrida.ui.session.ZaFridaSessionService;
 import com.zafrida.ui.session.ZaFridaSessionType;
+import com.zafrida.ui.session.RunningSession;
 import com.zafrida.ui.ui.ZaFridaConsolePanel;
 import com.zafrida.ui.ui.ZaFridaRunPanel;
+import com.zafrida.ui.util.ProjectFileUtil;
 import com.zafrida.ui.util.ZaFridaNetUtil;
 import com.zafrida.ui.util.ZaStrUtil;
 import com.sun.net.httpserver.Headers;
@@ -45,14 +53,18 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -64,15 +76,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * [本地 API] 对外暴露 ZAFrida 可控能力，供 skills/CLI 调用。
- * <p>
- * 说明：
- * 1. 仅绑定到 127.0.0.1，避免暴露到公网。
- * 2. 25 个单独接口 + 1 个汇总接口（不包含日志内容）。
- * 3. 任何 UI 读取/写入都通过 EDT 调度，避免线程模型破坏。
- */
-@Service(Service.Level.PROJECT)
 public final class ZaFridaLocalHttpApiService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaLocalHttpApiService.class);
@@ -82,11 +85,15 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
     private static final String API_BASE = "/zafrida/api/v1";
     private static final String API_HEALTH = API_BASE + "/health";
+    private static final String API_CAPABILITIES = API_BASE + "/capabilities";
     private static final String API_STATE = API_BASE + "/state";
 
     private static final String API_PROJECT_CURRENT = API_BASE + "/project/current";
     private static final String API_PROJECT_SELECT = API_BASE + "/project/select";
     private static final String API_PROJECT_CREATE = API_BASE + "/project/create";
+    private static final String API_PROJECT_PYTHON_ENVIRONMENT_SET = API_BASE + "/project/python-environment/set";
+    private static final String API_PYTHON_ENVIRONMENT_CURRENT = API_BASE + "/python-environment/current";
+    private static final String API_PYTHON_ENVIRONMENT_TEST = API_BASE + "/python-environment/test";
 
     private static final String API_DEVICE_SELECT = API_BASE + "/device/select";
     private static final String API_CONNECTION_MODE_SET = API_BASE + "/connection-mode/set";
@@ -99,6 +106,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     private static final String API_STOP = API_BASE + "/stop";
     private static final String API_ATTACH = API_BASE + "/attach";
     private static final String API_STOP_ATTACH = API_BASE + "/stop-attach";
+    private static final String API_SESSION_STATUS = API_BASE + "/session/status";
 
     private static final String API_RUN_LOG_PATH = API_BASE + "/run-log/path";
     private static final String API_RUN_LOG_CONTENT = API_BASE + "/run-log/content";
@@ -106,6 +114,9 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     private static final String API_ATTACH_LOG_CONTENT = API_BASE + "/attach-log/content";
     private static final String API_RUN_LOG_LINES = API_BASE + "/run-log/lines";
     private static final String API_ATTACH_LOG_LINES = API_BASE + "/attach-log/lines";
+    private static final String API_RUN_LOG_TAIL = API_BASE + "/run-log/tail";
+    private static final String API_ATTACH_LOG_TAIL = API_BASE + "/attach-log/tail";
+    private static final String API_LOGS_LIST = API_BASE + "/logs/list";
 
     private static final String API_DEVICES = API_BASE + "/devices";
     private static final String API_PROCESSES = API_BASE + "/processes";
@@ -114,9 +125,14 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     private static final String API_CONSOLE_CLEAR = API_BASE + "/console/clear";
     private static final String API_DIAGNOSTICS = API_BASE + "/diagnostics";
 
-    /** 单次按行读取的上限行数 */
     private static final int MAX_LINES_PER_REQUEST = 2000;
-    /** 诊断超时（诊断含多项检查，给予充足时间） */
+    private static final int DEFAULT_TAIL_BYTES = 64 * 1024;
+    private static final int MAX_LOG_RESPONSE_BYTES = 4 * 1024 * 1024;
+    private static final int MAX_CONSOLE_SNAPSHOT_CHARACTERS = MAX_LOG_RESPONSE_BYTES;
+    private static final int MAX_REQUEST_BODY_BYTES = 64 * 1024;
+    private static final int DEFAULT_LOG_LIST_LIMIT = 50;
+    private static final int MAX_LOG_LIST_LIMIT = 200;
+    private static final int MAX_SERVER_THREADS = 4;
     private static final long DIAGNOSTICS_TIMEOUT_SECONDS = 60L;
 
     private static final AtomicInteger SERVER_THREAD_ID = new AtomicInteger(1);
@@ -148,75 +164,57 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         maybeStartBySettingsAsync();
     }
 
-    /**
-     * 绑定当前可用的 RunPanel。
-     * @param runPanel 面板实例
-     */
     public void bindRunPanel(@NotNull ZaFridaRunPanel runPanel) {
         runPanelRef.set(runPanel);
     }
 
-    /**
-     * 解绑 RunPanel（dispose 时调用）。
-     * @param runPanel 面板实例
-     */
     public void unbindRunPanel(@NotNull ZaFridaRunPanel runPanel) {
         runPanelRef.compareAndSet(runPanel, null);
     }
 
-    /**
-     * 获取实际监听端口（调试/汇总接口使用）。
-     * @return 端口号；未启动时为 -1
-     */
     public int getBoundPort() {
         return boundPort;
     }
 
-    /**
-     * 服务是否已在监听。
-     * @return true 表示运行中
-     */
     public boolean isServerRunning() {
         return server != null;
     }
 
-    /**
-     * 获取最近一次启动失败原因（若无则返回 null）。
-     * @return 失败原因
-     */
     public @Nullable String getLastStartError() {
         return lastStartError;
     }
 
-    /**
-     * 立即启动服务（手动控制入口）。
-     */
     public boolean startServerNow() {
-        startServerSafely(false);
+        startServerSafely(false, null);
         return server != null;
     }
 
-    /**
-     * 立即停止服务（手动控制入口）。
-     */
+    public boolean startServerNow(int port) {
+        startServerSafely(false, port);
+        return server != null;
+    }
+
     public void stopServerNow() {
         stopServerSafely();
     }
 
-    /**
-     * 按当前设置重启服务。
-     */
     public boolean restartServerNow() {
         stopServerSafely();
-        startServerSafely(false);
+        startServerSafely(false, null);
+        return server != null;
+    }
+
+    public boolean restartServerNow(int port) {
+        stopServerSafely();
+        startServerSafely(false, port);
         return server != null;
     }
 
     private void maybeStartBySettingsAsync() {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> startServerSafely(true));
+        ApplicationManager.getApplication().executeOnPooledThread(() -> startServerSafely(true, null));
     }
 
-    private void startServerSafely(boolean requireEnabledInSettings) {
+    private void startServerSafely(boolean requireEnabledInSettings, @Nullable Integer requestedPort) {
         synchronized (serverLock) {
             if (project.isDisposed()) {
                 return;
@@ -231,7 +229,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
                 return;
             }
 
-            int configuredPort = resolveConfiguredPort();
+            int configuredPort = resolveConfiguredPort(requestedPort);
             InetSocketAddress address = new InetSocketAddress(BIND_HOST, configuredPort);
 
             HttpServer createdServer;
@@ -245,7 +243,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
             registerContexts(createdServer);
 
-            ExecutorService executor = Executors.newCachedThreadPool(new ThreadFactory() {
+            ExecutorService executor = Executors.newFixedThreadPool(MAX_SERVER_THREADS, new ThreadFactory() {
                 @Override
                 public Thread newThread(@NotNull Runnable runnable) {
                     Thread thread = new Thread(runnable,
@@ -293,7 +291,10 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return state.enableSkillsHttpApi;
     }
 
-    private int resolveConfiguredPort() {
+    private int resolveConfiguredPort(@Nullable Integer requestedPort) {
+        if (requestedPort != null && requestedPort > 0 && requestedPort <= 65_535) {
+            return requestedPort;
+        }
         ZaFridaSettingsState state = settingsService.getState();
         int configuredPort = state.skillsApiPort;
         if (configuredPort > 0 && configuredPort <= 65535) {
@@ -304,11 +305,18 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
     private void registerContexts(@NotNull HttpServer createdServer) {
         createdServer.createContext(API_HEALTH, exchange -> dispatch(exchange, "GET", this::handleHealth));
+        createdServer.createContext(API_CAPABILITIES, exchange -> dispatch(exchange, "GET", this::handleCapabilities));
         createdServer.createContext(API_STATE, exchange -> dispatch(exchange, "GET", this::handleState));
 
         createdServer.createContext(API_PROJECT_CURRENT, exchange -> dispatch(exchange, "GET", this::handleProjectCurrent));
         createdServer.createContext(API_PROJECT_SELECT, exchange -> dispatch(exchange, "POST", this::handleProjectSelect));
         createdServer.createContext(API_PROJECT_CREATE, exchange -> dispatch(exchange, "POST", this::handleProjectCreate));
+        createdServer.createContext(API_PROJECT_PYTHON_ENVIRONMENT_SET,
+                exchange -> dispatch(exchange, "POST", this::handleProjectPythonEnvironmentSet));
+        createdServer.createContext(API_PYTHON_ENVIRONMENT_CURRENT,
+                exchange -> dispatch(exchange, "GET", this::handlePythonEnvironmentCurrent));
+        createdServer.createContext(API_PYTHON_ENVIRONMENT_TEST,
+                exchange -> dispatch(exchange, "POST", this::handlePythonEnvironmentTest));
 
         createdServer.createContext(API_DEVICE_SELECT, exchange -> dispatch(exchange, "POST", this::handleDeviceSelect));
         createdServer.createContext(API_CONNECTION_MODE_SET, exchange -> dispatch(exchange, "POST", this::handleConnectionModeSet));
@@ -321,6 +329,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         createdServer.createContext(API_STOP, exchange -> dispatch(exchange, "POST", this::handleStop));
         createdServer.createContext(API_ATTACH, exchange -> dispatch(exchange, "POST", this::handleAttach));
         createdServer.createContext(API_STOP_ATTACH, exchange -> dispatch(exchange, "POST", this::handleStopAttach));
+        createdServer.createContext(API_SESSION_STATUS, exchange -> dispatch(exchange, "GET", this::handleSessionStatus));
 
         createdServer.createContext(API_RUN_LOG_PATH, exchange -> dispatch(exchange, "GET", this::handleRunLogPath));
         createdServer.createContext(API_RUN_LOG_CONTENT, exchange -> dispatch(exchange, "GET", this::handleRunLogContent));
@@ -328,6 +337,9 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         createdServer.createContext(API_ATTACH_LOG_CONTENT, exchange -> dispatch(exchange, "GET", this::handleAttachLogContent));
         createdServer.createContext(API_RUN_LOG_LINES, exchange -> dispatch(exchange, "GET", this::handleRunLogLines));
         createdServer.createContext(API_ATTACH_LOG_LINES, exchange -> dispatch(exchange, "GET", this::handleAttachLogLines));
+        createdServer.createContext(API_RUN_LOG_TAIL, exchange -> dispatch(exchange, "GET", this::handleRunLogTail));
+        createdServer.createContext(API_ATTACH_LOG_TAIL, exchange -> dispatch(exchange, "GET", this::handleAttachLogTail));
+        createdServer.createContext(API_LOGS_LIST, exchange -> dispatch(exchange, "GET", this::handleLogsList));
 
         createdServer.createContext(API_DEVICES, exchange -> dispatch(exchange, "GET", this::handleDevices));
         createdServer.createContext(API_PROCESSES, exchange -> dispatch(exchange, "GET", this::handleProcesses));
@@ -341,6 +353,12 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
                           @NotNull String requiredMethod,
                           @NotNull ApiHandler handler) throws IOException {
         try {
+            validateRequestOrigin(exchange);
+            String registeredPath = exchange.getHttpContext().getPath();
+            String requestedPath = exchange.getRequestURI().getPath();
+            if (!registeredPath.equals(requestedPath)) {
+                throw new ApiException(404, String.format("Unknown API path: %s", requestedPath));
+            }
             String requestMethod = exchange.getRequestMethod();
             if ("OPTIONS".equalsIgnoreCase(requestMethod)) {
                 writeNoContent(exchange);
@@ -355,14 +373,23 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             Map<String, Object> data = handler.handle(request);
             writeSuccess(exchange, data);
         } catch (ApiException e) {
-            writeError(exchange, e.statusCode, e.getMessage());
+            writeError(exchange, e.statusCode, e.errorCode, e.retryable, e.getMessage());
+        } catch (PythonEnvResolutionException e) {
+            writeError(exchange, 422, "PYTHON_ENVIRONMENT_INVALID", false, safeErrorMessage(e));
+        } catch (FridaCliException e) {
+            ApiException apiException = mapFridaFailure(e);
+            writeError(exchange,
+                    apiException.statusCode,
+                    apiException.errorCode,
+                    apiException.retryable,
+                    apiException.getMessage());
         } catch (Throwable t) {
             LOG.warn("[ZAFrida API] Request handling failed", t);
             String message = t.getMessage();
             if (ZaStrUtil.isBlank(message)) {
                 message = t.getClass().getSimpleName();
             }
-            writeError(exchange, 500, String.format("Internal error: %s", message));
+            writeError(exchange, 500, "INTERNAL_ERROR", false, String.format("Internal error: %s", message));
         } finally {
             exchange.close();
         }
@@ -375,6 +402,40 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         data.put("port", boundPort);
         data.put("basePath", API_BASE);
         data.put("runPanelReady", runPanelRef.get() != null);
+        return data;
+    }
+
+    private @NotNull Map<String, Object> handleCapabilities(@NotNull RequestContext request) {
+        Map<String, Object> limits = new LinkedHashMap<>();
+        limits.put("maxLogResponseBytes", MAX_LOG_RESPONSE_BYTES);
+        limits.put("maxLogLinesPerRequest", MAX_LINES_PER_REQUEST);
+        limits.put("maxLogFilesPerRequest", MAX_LOG_LIST_LIMIT);
+        limits.put("maxRequestBodyBytes", MAX_REQUEST_BODY_BYTES);
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("apiVersion", "v1");
+        data.put("apiRevision", 2);
+        data.put("scriptExtensions", List.of("js", "ts"));
+        data.put("features", List.of(
+                "project-python-environments",
+                "shared-python-environments",
+                "frida-17-typescript",
+                "session-status",
+                "historical-log-list",
+                "incremental-log-tail"
+        ));
+        data.put("safeAutomaticRetries", List.of(
+                "health", "capabilities", "state", "session-status", "diagnostics",
+                "project-current", "python-environment-current", "python-environment-test",
+                "devices", "processes", "logs-list", "log-path", "log-content", "log-lines", "log-tail"
+        ));
+        data.put("nonIdempotentActions", List.of("project-create", "run", "attach", "adb-open-app"));
+        data.put("mutationsNotAutomaticallyRetried", List.of(
+                "project-select", "project-create", "python-environment-set", "device-select",
+                "connection-mode-set", "target-set", "run-script-set", "attach-script-set", "extra-args-set",
+                "run", "attach", "adb-force-stop", "adb-open-app"
+        ));
+        data.put("limits", limits);
         return data;
     }
 
@@ -416,6 +477,9 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
     private @NotNull Map<String, Object> handleProjectCreate(@NotNull RequestContext request) throws Exception {
         String name = request.require("name");
+        if (".".equals(name.trim()) || "..".equals(name.trim())) {
+            throw new ApiException(400, "Project name cannot be '.' or '..'");
+        }
         String platformRaw = request.getOrDefault("platform", "android");
         ZaFridaPlatform platform = parsePlatform(platformRaw);
 
@@ -430,6 +494,68 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("activeProject", projectToMap(created));
+        return data;
+    }
+
+    private @NotNull Map<String, Object> handleProjectPythonEnvironmentSet(@NotNull RequestContext request) throws Exception {
+        ZaFridaFridaProject activeProject = requireActiveProject();
+        String configuredPath = request.getOrDefault("path", "").trim();
+        if (!configuredPath.isEmpty()) {
+            ProjectPythonEnvResolver.resolveConfiguredPath(configuredPath);
+        }
+
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        projectManager.updateProjectConfigAsync(activeProject,
+                config -> config.pythonEnvironmentPath = configuredPath,
+                () -> future.complete(null),
+                future::completeExceptionally);
+        awaitVoidFuture(future, "Update Python environment timeout");
+        fridaCliService.clearDetectedProjectVersion(project);
+
+        ZaFridaRunPanel panel = runPanelRef.get();
+        if (panel != null) {
+            runOnUiThreadAndWait(panel::refreshActiveProjectUiForApi);
+        }
+
+        PythonEnvInfo environment = ProjectPythonEnvResolver.resolve(project);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("configuredPath", configuredPath);
+        data.put("usesIdeProjectInterpreter", configuredPath.isEmpty());
+        data.put("environment", environmentToMap(environment));
+        return data;
+    }
+
+    private @NotNull Map<String, Object> handlePythonEnvironmentCurrent(@NotNull RequestContext request) {
+        PythonEnvInfo environment = ProjectPythonEnvResolver.resolve(project);
+        Map<String, Object> data = new LinkedHashMap<>();
+        String configuredPath = projectManager.getActivePythonEnvironmentPath();
+        data.put("configuredPath", configuredPath);
+        data.put("usesIdeProjectInterpreter", configuredPath.isEmpty());
+        data.put("environment", environmentToMap(environment));
+        return data;
+    }
+
+    private @NotNull Map<String, Object> handlePythonEnvironmentTest(@NotNull RequestContext request) {
+        String candidatePath = request.get("path");
+        PythonEnvInfo environment;
+        String version;
+        if (ZaStrUtil.isBlank(candidatePath)) {
+            environment = ProjectPythonEnvResolver.resolve(project);
+            if (environment == null) {
+                throw new ApiException(422, "PYTHON_ENVIRONMENT_NOT_FOUND", false,
+                        "The effective project Python environment could not be resolved");
+            }
+            version = fridaCliService.detectProjectFridaVersion(project);
+        } else {
+            environment = ProjectPythonEnvResolver.resolveConfiguredPath(candidatePath);
+            version = fridaCliService.detectFridaPythonVersion(environment);
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("environment", environmentToMap(environment));
+        data.put("fridaVersion", version);
+        data.put("frida17OrLater", ZaStrUtil.compareVersion(version, "17") >= 0);
+        data.put("typescriptDirectLoad", ZaStrUtil.compareVersion(version, "17") >= 0);
         return data;
     }
 
@@ -452,7 +578,22 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             return matched;
         });
         if (!selected) {
-            throw new ApiException(404, "Device not found in current list");
+            FridaDevice discovered = findRequestedDevice(listAvailableDevices(), id, host);
+            if (discovered == null && ZaStrUtil.isNotBlank(host)) {
+                String normalizedHost = host.trim();
+                discovered = new FridaDevice(
+                        String.format("remote:%s", normalizedHost),
+                        "remote",
+                        "Remote",
+                        FridaDeviceMode.HOST,
+                        normalizedHost
+                );
+            }
+            if (discovered == null) {
+                throw new ApiException(404, "Device not found");
+            }
+            FridaDevice finalDiscovered = discovered;
+            runOnUiThreadAndWait(() -> panel.selectDeviceForApi(finalDiscovered));
         }
 
         FridaDevice selectedDevice = callOnUiThreadAndWait(panel::getSelectedDeviceForApi);
@@ -487,7 +628,6 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             cfg.remoteHost = ZaFridaNetUtil.defaultHost(cfg.remoteHost);
             cfg.remotePort = ZaFridaNetUtil.defaultPort(cfg.remotePort);
             cfg.lastDeviceHost = String.format("%s:%s", cfg.remoteHost, cfg.remotePort);
-            cfg.lastDeviceId = null;
         }, () -> future.complete(null));
         awaitVoidFuture(future, "Update connection mode timeout");
 
@@ -517,10 +657,8 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     private @NotNull Map<String, Object> handleRunScriptSet(@NotNull RequestContext request) throws Exception {
         String path = request.require("path");
         ZaFridaRunPanel panel = requireRunPanel();
-        boolean ok = callOnUiThreadAndWait(() -> panel.setRunScriptPathForApi(path));
-        if (!ok) {
-            throw new ApiException(400, String.format("Invalid run script: %s", path));
-        }
+        VirtualFile file = resolveFridaScriptFile(path, "run");
+        runOnUiThreadAndWait(() -> panel.setRunScriptFileForApi(file));
 
         String runScript = callOnUiThreadAndWait(panel::getRunScriptPathForApi);
         Map<String, Object> data = new LinkedHashMap<>();
@@ -531,10 +669,8 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     private @NotNull Map<String, Object> handleAttachScriptSet(@NotNull RequestContext request) throws Exception {
         String path = request.require("path");
         ZaFridaRunPanel panel = requireRunPanel();
-        boolean ok = callOnUiThreadAndWait(() -> panel.setAttachScriptPathForApi(path));
-        if (!ok) {
-            throw new ApiException(400, String.format("Invalid attach script: %s", path));
-        }
+        VirtualFile file = resolveFridaScriptFile(path, "attach");
+        runOnUiThreadAndWait(() -> panel.setAttachScriptFileForApi(file));
 
         String attachScript = callOnUiThreadAndWait(panel::getAttachScriptPathForApi);
         Map<String, Object> data = new LinkedHashMap<>();
@@ -582,8 +718,26 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return actionResult("stop-attach");
     }
 
+    private @NotNull Map<String, Object> handleSessionStatus(@NotNull RequestContext request) throws Exception {
+        UiSnapshot snapshot = captureUiSnapshot();
+        Map<String, Object> run = buildSessionStatus(
+                ZaFridaSessionType.RUN,
+                snapshot.runLogPath
+        );
+        Map<String, Object> attach = buildSessionStatus(
+                ZaFridaSessionType.ATTACH,
+                snapshot.attachLogPath
+        );
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("run", run);
+        data.put("attach", attach);
+        data.put("recommendedPollIntervalMs", 500);
+        return data;
+    }
+
     private @NotNull Map<String, Object> handleRunLogPath(@NotNull RequestContext request) throws Exception {
-        LogState state = captureLogState(true);
+        LogState state = captureLogState(true, false);
         long fileSize = computeFileSize(state.path, state.existsOnDisk);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("path", state.path);
@@ -598,7 +752,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     }
 
     private @NotNull Map<String, Object> handleAttachLogPath(@NotNull RequestContext request) throws Exception {
-        LogState state = captureLogState(false);
+        LogState state = captureLogState(false, false);
         long fileSize = computeFileSize(state.path, state.existsOnDisk);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("path", state.path);
@@ -620,8 +774,73 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return readLogLines(false, request);
     }
 
+    private @NotNull Map<String, Object> handleRunLogTail(@NotNull RequestContext request) throws Exception {
+        return readLogTail(true, request);
+    }
+
+    private @NotNull Map<String, Object> handleAttachLogTail(@NotNull RequestContext request) throws Exception {
+        return readLogTail(false, request);
+    }
+
+    private @NotNull Map<String, Object> handleLogsList(@NotNull RequestContext request) {
+        String type = request.getOrDefault("type", "all").trim().toLowerCase(Locale.ROOT);
+        if (!"all".equals(type) && !"run".equals(type) && !"attach".equals(type)) {
+            throw new ApiException(400, String.format("Unsupported log type: %s", type));
+        }
+        int limit = parseNonNegativeInt(request.get("limit"), DEFAULT_LOG_LIST_LIMIT, "limit");
+        if (limit <= 0) {
+            limit = DEFAULT_LOG_LIST_LIMIT;
+        }
+        if (limit > MAX_LOG_LIST_LIMIT) {
+            limit = MAX_LOG_LIST_LIMIT;
+        }
+
+        List<Path> files = new ArrayList<>();
+        for (Path root : resolveAllowedLogRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (java.util.stream.Stream<Path> stream = Files.list(root)) {
+                stream.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                        .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".log"))
+                        .filter(path -> matchesLogType(path, type))
+                        .forEach(files::add);
+            } catch (IOException e) {
+                LOG.debug(String.format("[ZAFrida API] List logs failed: %s", root), e);
+            }
+        }
+        files.sort(Comparator.comparingLong(this::lastModifiedMillis).reversed());
+
+        List<Map<String, Object>> entries = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (Path file : files) {
+            if (entries.size() >= limit) {
+                break;
+            }
+            String absolutePath = file.toAbsolutePath().normalize().toString();
+            if (!seen.add(absolutePath)) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("path", absolutePath);
+            entry.put("name", file.getFileName().toString());
+            long size = computeFileSize(absolutePath);
+            entry.put("fileSize", size);
+            entry.put("sizeHuman", formatFileSize(size));
+            entry.put("lastModified", lastModifiedMillis(file));
+            entry.put("sessionType", detectLogType(file));
+            entries.add(entry);
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("type", type);
+        data.put("count", entries.size());
+        data.put("logs", entries);
+        return data;
+    }
+
     private @NotNull Map<String, Object> readLogContent(boolean runLog, @NotNull RequestContext request) throws Exception {
-        LogState state = captureLogState(runLog);
+        LogState state = captureLogState(runLog, true);
         String pathFromParam = request.get("path");
         String normalizedPath = pathFromParam;
         if (ZaStrUtil.isBlank(normalizedPath)) {
@@ -633,22 +852,39 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         normalizedPath = normalizedPath.trim();
 
         int maxBytes = parseNonNegativeInt(request.get("maxBytes"), 0, "maxBytes");
+        if (maxBytes > MAX_LOG_RESPONSE_BYTES) {
+            throw new ApiException(400, String.format(
+                    "maxBytes exceeds the server limit (%s): %s",
+                    MAX_LOG_RESPONSE_BYTES,
+                    maxBytes
+            ));
+        }
 
         if (normalizedPath.isEmpty() || normalizedPath.startsWith("(")) {
+            int consoleLimit = MAX_LOG_RESPONSE_BYTES;
+            if (maxBytes > 0) {
+                consoleLimit = maxBytes;
+            }
+            byte[] consoleBytes = state.consoleText.getBytes(StandardCharsets.UTF_8);
+            ByteChunk consoleChunk = readUtf8Tail(consoleBytes, consoleLimit);
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("path", normalizedPath);
             data.put("source", "console");
-            data.put("content", state.consoleText);
-            data.put("truncated", false);
+            data.put("content", new String(consoleChunk.bytes, StandardCharsets.UTF_8));
+            data.put("truncated", state.consoleTruncated || consoleChunk.startOffset > 0L);
             return data;
         }
 
-        return readLogFileContent(normalizedPath, maxBytes);
+        Path logPath = resolveReadableLogFile(normalizedPath);
+        return readLogFileContent(logPath, maxBytes);
     }
 
-    private @NotNull LogState captureLogState(boolean runLog) throws Exception {
-        ZaFridaRunPanel panel = requireRunPanel();
-        return callOnUiThreadAndWait(() -> {
+    private @NotNull LogState captureLogState(boolean runLog, boolean includeConsole) throws Exception {
+        ZaFridaRunPanel panel = runPanelRef.get();
+        if (panel == null) {
+            return new LogState("", "", false, false);
+        }
+        LogState snapshot = callOnUiThreadAndWait(() -> {
             ZaFridaConsolePanel console;
             if (runLog) {
                 console = panel.getRunConsolePanelForApi();
@@ -661,21 +897,28 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
                 path = "";
             }
             String trimmedPath = path.trim();
-            boolean exists = false;
-            if (!trimmedPath.isEmpty() && !trimmedPath.startsWith("(")) {
-                Path filePath = Paths.get(trimmedPath);
-                exists = Files.exists(filePath);
+            String consoleText = "";
+            boolean consoleTruncated = false;
+            if (includeConsole && (trimmedPath.isEmpty() || trimmedPath.startsWith("("))) {
+                int consoleLength = console.getConsoleTextLength();
+                consoleText = console.getConsoleTextTailSnapshot(MAX_CONSOLE_SNAPSHOT_CHARACTERS);
+                consoleTruncated = consoleLength > MAX_CONSOLE_SNAPSHOT_CHARACTERS;
             }
-            return new LogState(trimmedPath, console.getConsoleTextSnapshot(), exists);
+            return new LogState(trimmedPath, consoleText, false, consoleTruncated);
         });
+        boolean exists = false;
+        if (!snapshot.path.isEmpty() && !snapshot.path.startsWith("(")) {
+            try {
+                Path filePath = Paths.get(snapshot.path);
+                exists = Files.isRegularFile(filePath);
+            } catch (RuntimeException e) {
+                LOG.debug(String.format("[ZAFrida API] Invalid current log path: %s", snapshot.path), e);
+            }
+        }
+        return new LogState(snapshot.path, snapshot.consoleText, exists, snapshot.consoleTruncated);
     }
 
-    private @NotNull Map<String, Object> readLogFileContent(@NotNull String path, int maxBytes) throws IOException {
-        Path logPath = Paths.get(path);
-        if (!Files.exists(logPath) || !Files.isRegularFile(logPath)) {
-            throw new ApiException(404, String.format("Log file not found: %s", path));
-        }
-
+    private @NotNull Map<String, Object> readLogFileContent(@NotNull Path logPath, int maxBytes) throws IOException {
         long fileSize = Files.size(logPath);
         boolean truncated = false;
         byte[] bytes;
@@ -684,6 +927,14 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             truncated = true;
             bytes = readTailBytes(logPath, maxBytes);
         } else {
+            if (fileSize > MAX_LOG_RESPONSE_BYTES) {
+                throw new ApiException(
+                        413,
+                        "LOG_RESPONSE_TOO_LARGE",
+                        false,
+                        String.format("Log is %s bytes; use /tail or maxBytes <= %s", fileSize, MAX_LOG_RESPONSE_BYTES)
+                );
+            }
             bytes = Files.readAllBytes(logPath);
         }
 
@@ -703,27 +954,13 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     }
 
     private byte @NotNull [] readTailBytes(@NotNull Path path, int maxBytes) throws IOException {
-        try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r")) {
-            long length = raf.length();
-            if (length <= 0) {
-                return new byte[0];
-            }
-            int bytesToRead = (int) Math.min(length, maxBytes);
-            long start = length - bytesToRead;
-            raf.seek(start);
-            byte[] buffer = new byte[bytesToRead];
-            raf.readFully(buffer);
-            return buffer;
-        }
+        long length = Files.size(path);
+        long start = Math.max(0L, length - maxBytes);
+        return readUtf8Chunk(path, start, maxBytes, length).bytes;
     }
 
-    /**
-     * 按行读取日志文件的指定范围。
-     * <p>
-     * 参数：start（1-based 起始行号，默认 1）、count（读取行数，默认 100，上限 {@link #MAX_LINES_PER_REQUEST}）。
-     */
     private @NotNull Map<String, Object> readLogLines(boolean runLog, @NotNull RequestContext request) throws Exception {
-        LogState state = captureLogState(runLog);
+        LogState state = captureLogState(runLog, false);
         String path = request.get("path");
         if (ZaStrUtil.isBlank(path)) {
             path = state.path;
@@ -737,10 +974,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             throw new ApiException(400, "日志文件路径无效，当前会话可能仅使用 Console 输出");
         }
 
-        Path logPath = Paths.get(path);
-        if (!Files.exists(logPath) || !Files.isRegularFile(logPath)) {
-            throw new ApiException(404, String.format("Log file not found: %s", path));
-        }
+        Path logPath = resolveReadableLogFile(path);
 
         int startLine = parseNonNegativeInt(request.get("start"), 1, "start");
         if (startLine < 1) {
@@ -792,18 +1026,154 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return data;
     }
 
-    // ── 设备列表 ──
-
-    /**
-     * 列出所有已连接设备（调用 frida-ls-devices，在后台线程执行）。
-     */
-    private @NotNull Map<String, Object> handleDevices(@NotNull RequestContext request) throws Exception {
-        List<FridaDevice> devices;
-        try {
-            devices = fridaCliService.listDevices(project);
-        } catch (Exception e) {
-            throw new ApiException(500, String.format("枚举设备失败: %s", e.getMessage()));
+    private @NotNull Map<String, Object> readLogTail(boolean runLog,
+                                                     @NotNull RequestContext request) throws Exception {
+        LogState state = captureLogState(runLog, true);
+        String path = request.get("path");
+        if (ZaStrUtil.isBlank(path)) {
+            path = state.path;
         }
+        int maxBytes = parseNonNegativeInt(request.get("maxBytes"), DEFAULT_TAIL_BYTES, "maxBytes");
+        if (maxBytes <= 0) {
+            maxBytes = DEFAULT_TAIL_BYTES;
+        }
+        if (maxBytes < 4) {
+            throw new ApiException(400, "maxBytes must be at least 4 for UTF-8 log reads");
+        }
+        if (maxBytes > MAX_LOG_RESPONSE_BYTES) {
+            throw new ApiException(400, String.format(
+                    "maxBytes exceeds the server limit (%s): %s",
+                    MAX_LOG_RESPONSE_BYTES,
+                    maxBytes
+            ));
+        }
+
+        if (ZaStrUtil.isBlank(path) || path.trim().startsWith("(")) {
+            byte[] consoleBytes = state.consoleText.getBytes(StandardCharsets.UTF_8);
+            ByteChunk consoleChunk = readUtf8Tail(consoleBytes, maxBytes);
+            Map<String, Object> data = new LinkedHashMap<>();
+            String normalizedPath = "";
+            if (path != null) {
+                normalizedPath = path.trim();
+            }
+            data.put("path", normalizedPath);
+            data.put("source", "console");
+            data.put("content", new String(consoleChunk.bytes, StandardCharsets.UTF_8));
+            data.put("startOffset", consoleChunk.startOffset);
+            data.put("nextOffset", consoleBytes.length);
+            data.put("fileSize", consoleBytes.length);
+            data.put("hasMore", false);
+            data.put("reset", state.consoleTruncated);
+            data.put("truncated", state.consoleTruncated || consoleChunk.startOffset > 0L);
+            return data;
+        }
+
+        Path logPath = resolveReadableLogFile(path);
+        long fileSize = Files.size(logPath);
+        String offsetText = request.get("offset");
+        boolean offsetProvided = ZaStrUtil.isNotBlank(offsetText);
+        long startOffset;
+        boolean reset = false;
+        if (offsetProvided) {
+            startOffset = parseNonNegativeLong(offsetText, 0L, "offset");
+            if (startOffset > fileSize) {
+                startOffset = 0L;
+                reset = true;
+            }
+        } else {
+            startOffset = Math.max(0L, fileSize - maxBytes);
+        }
+
+        ByteChunk chunk = readUtf8Chunk(logPath, startOffset, maxBytes, fileSize);
+        byte[] bytes = chunk.bytes;
+        startOffset = chunk.startOffset;
+        long nextOffset = startOffset + bytes.length;
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("path", logPath.toAbsolutePath().normalize().toString());
+        data.put("source", "file");
+        data.put("content", new String(bytes, StandardCharsets.UTF_8));
+        data.put("startOffset", startOffset);
+        data.put("nextOffset", nextOffset);
+        data.put("fileSize", fileSize);
+        data.put("sizeHuman", formatFileSize(fileSize));
+        data.put("hasMore", nextOffset < fileSize);
+        data.put("reset", reset);
+        data.put("fromEnd", !offsetProvided);
+        return data;
+    }
+
+    private @NotNull ByteChunk readUtf8Chunk(@NotNull Path path,
+                                             long requestedOffset,
+                                             int maxBytes,
+                                             long fileSize) throws IOException {
+        long startOffset = requestedOffset;
+        try (RandomAccessFile file = new RandomAccessFile(path.toFile(), "r")) {
+            if (startOffset > 0L && startOffset < fileSize) {
+                file.seek(startOffset);
+                int first = file.read();
+                while (first >= 0 && (first & 0xC0) == 0x80) {
+                    startOffset++;
+                    first = file.read();
+                }
+            }
+            int count = (int) Math.min((long) maxBytes, Math.max(0L, fileSize - startOffset));
+            if (count <= 0) {
+                return new ByteChunk(startOffset, new byte[0]);
+            }
+            file.seek(startOffset);
+            byte[] bytes = new byte[count];
+            file.readFully(bytes);
+            int validLength = completeUtf8PrefixLength(bytes);
+            if (validLength == bytes.length) {
+                return new ByteChunk(startOffset, bytes);
+            }
+            byte[] completeBytes = new byte[validLength];
+            System.arraycopy(bytes, 0, completeBytes, 0, validLength);
+            return new ByteChunk(startOffset, completeBytes);
+        }
+    }
+
+    private @NotNull ByteChunk readUtf8Tail(byte @NotNull [] bytes, int maxBytes) {
+        int start = Math.max(0, bytes.length - maxBytes);
+        while (start < bytes.length && (bytes[start] & 0xC0) == 0x80) {
+            start++;
+        }
+        byte[] tail = new byte[bytes.length - start];
+        System.arraycopy(bytes, start, tail, 0, tail.length);
+        return new ByteChunk(start, tail);
+    }
+
+    private int completeUtf8PrefixLength(byte @NotNull [] bytes) {
+        if (bytes.length == 0) {
+            return 0;
+        }
+        int leadIndex = bytes.length - 1;
+        while (leadIndex >= 0 && (bytes[leadIndex] & 0xC0) == 0x80) {
+            leadIndex--;
+        }
+        if (leadIndex < 0) {
+            return 0;
+        }
+        int lead = bytes[leadIndex] & 0xFF;
+        int expectedLength = 1;
+        if ((lead & 0xE0) == 0xC0) {
+            expectedLength = 2;
+        } else if ((lead & 0xF0) == 0xE0) {
+            expectedLength = 3;
+        } else if ((lead & 0xF8) == 0xF0) {
+            expectedLength = 4;
+        }
+        int actualLength = bytes.length - leadIndex;
+        if (actualLength < expectedLength) {
+            return leadIndex;
+        }
+        return bytes.length;
+    }
+
+
+    private @NotNull Map<String, Object> handleDevices(@NotNull RequestContext request) throws Exception {
+        List<FridaDevice> devices = listAvailableDevices();
 
         List<Map<String, Object>> list = new ArrayList<>();
         for (FridaDevice device : devices) {
@@ -819,13 +1189,70 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return data;
     }
 
-    // ── 进程/应用列表 ──
+    private @NotNull List<FridaDevice> listAvailableDevices() throws Exception {
+        List<FridaDevice> devices = new ArrayList<>(fridaCliService.listDevices(project));
+        for (String host : settingsService.getRemoteHosts()) {
+            addHostDeviceIfMissing(devices, host, "remote");
+        }
 
-    /**
-     * 列出当前选中设备上的进程或应用。
-     * <p>
-     * 参数：scope（running/apps/installed，默认 running）。
-     */
+        ZaFridaProjectConfig config = loadProjectConfigBlocking(projectManager.getActiveProject());
+        if (config != null
+                && (config.connectionMode == FridaConnectionMode.REMOTE
+                || config.connectionMode == FridaConnectionMode.GADGET)) {
+            String host = String.format(
+                    "%s:%s",
+                    ZaFridaNetUtil.defaultHost(config.remoteHost),
+                    ZaFridaNetUtil.defaultPort(config.remotePort)
+            );
+            String type = "remote";
+            if (config.connectionMode == FridaConnectionMode.GADGET) {
+                type = "gadget";
+            }
+            addHostDeviceIfMissing(devices, host, type);
+        }
+        return devices;
+    }
+
+    private void addHostDeviceIfMissing(@NotNull List<FridaDevice> devices,
+                                        @Nullable String rawHost,
+                                        @NotNull String type) {
+        if (ZaStrUtil.isBlank(rawHost)) {
+            return;
+        }
+        String host = rawHost.trim();
+        for (FridaDevice device : devices) {
+            if (host.equals(device.getHost())) {
+                return;
+            }
+        }
+        String name = "Remote";
+        if ("gadget".equals(type)) {
+            name = "Gadget";
+        }
+        devices.add(new FridaDevice(
+                String.format("%s:%s", type, host),
+                type,
+                name,
+                FridaDeviceMode.HOST,
+                host
+        ));
+    }
+
+    private @Nullable FridaDevice findRequestedDevice(@NotNull List<FridaDevice> devices,
+                                                       @Nullable String id,
+                                                       @Nullable String host) {
+        for (FridaDevice device : devices) {
+            if (ZaStrUtil.isNotBlank(id) && id.trim().equals(device.getId())) {
+                return device;
+            }
+            if (ZaStrUtil.isNotBlank(host) && host.trim().equals(device.getHost())) {
+                return device;
+            }
+        }
+        return null;
+    }
+
+
     private @NotNull Map<String, Object> handleProcesses(@NotNull RequestContext request) throws Exception {
         FridaDevice device = callOnUiThreadAndWait(() -> {
             ZaFridaRunPanel panel = runPanelRef.get();
@@ -842,12 +1269,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         String scopeParam = request.get("scope");
         FridaProcessScope scope = parseProcessScope(scopeParam);
 
-        List<FridaProcess> processes;
-        try {
-            processes = fridaCliService.listProcesses(project, device, scope);
-        } catch (Exception e) {
-            throw new ApiException(500, String.format("列出进程失败: %s", e.getMessage()));
-        }
+        List<FridaProcess> processes = fridaCliService.listProcesses(project, device, scope);
 
         List<Map<String, Object>> list = new ArrayList<>();
         for (FridaProcess proc : processes) {
@@ -880,13 +1302,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return FridaProcessScope.RUNNING_PROCESSES;
     }
 
-    // ── ADB 操作 ──
 
-    /**
-     * 通过 ADB 强制停止应用。
-     * <p>
-     * 参数：target（可选，默认使用当前 UI 中的 target）。
-     */
     private @NotNull Map<String, Object> handleAdbForceStop(@NotNull RequestContext request) throws Exception {
         String target = resolveAdbTarget(request);
         String deviceId = resolveCurrentDeviceId();
@@ -904,11 +1320,6 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return buildAdbResult("force-stop", target, logs);
     }
 
-    /**
-     * 通过 ADB 启动应用。
-     * <p>
-     * 参数：target（可选，默认使用当前 UI 中的 target）。
-     */
     private @NotNull Map<String, Object> handleAdbOpenApp(@NotNull RequestContext request) throws Exception {
         String target = resolveAdbTarget(request);
         String deviceId = resolveCurrentDeviceId();
@@ -952,16 +1363,29 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             return panel.getSelectedDeviceForApi();
         });
         if (device == null) {
-            return null;
+            return resolveSavedAdbDeviceId();
         }
         if (device.getMode() != FridaDeviceMode.DEVICE_ID) {
-            return null;
+            return resolveSavedAdbDeviceId();
         }
         String id = device.getId();
         if (ZaStrUtil.isBlank(id) || "usb".equalsIgnoreCase(id)) {
             return null;
         }
         return id;
+    }
+
+    private @Nullable String resolveSavedAdbDeviceId() throws Exception {
+        ZaFridaFridaProject activeProject = projectManager.getActiveProject();
+        ZaFridaProjectConfig config = loadProjectConfigBlocking(activeProject);
+        if (config == null || ZaStrUtil.isBlank(config.lastDeviceId)) {
+            return null;
+        }
+        String deviceId = config.lastDeviceId.trim();
+        if ("usb".equalsIgnoreCase(deviceId)) {
+            return null;
+        }
+        return deviceId;
     }
 
     private @NotNull Map<String, Object> buildAdbResult(@NotNull String action,
@@ -975,16 +1399,14 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return data;
     }
 
-    // ── Console 清空 ──
 
-    /**
-     * 清空指定控制台。
-     * <p>
-     * 参数：type（run/attach，默认 run）。
-     */
     private @NotNull Map<String, Object> handleConsoleClear(@NotNull RequestContext request) throws Exception {
         String typeParam = request.get("type");
-        boolean isRun = !"attach".equalsIgnoreCase(typeParam == null ? "" : typeParam.trim());
+        String normalizedType = "";
+        if (typeParam != null) {
+            normalizedType = typeParam.trim();
+        }
+        boolean isRun = !"attach".equalsIgnoreCase(normalizedType);
 
         runOnUiThreadAndWait(() -> {
             ZaFridaRunPanel panel = runPanelRef.get();
@@ -1002,18 +1424,16 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("action", "console-clear");
-        data.put("type", isRun ? "run" : "attach");
+        String sessionType = "attach";
+        if (isRun) {
+            sessionType = "run";
+        }
+        data.put("type", sessionType);
         data.put("accepted", true);
         return data;
     }
 
-    // ── 环境诊断 ──
 
-    /**
-     * 运行环境诊断（6 项检查：Python SDK / Frida 路径 / 版本 / 设备枚举 / 设备连通 / ADB）。
-     * <p>
-     * 诊断在后台线程执行，本接口同步等待全部完成后返回结果。
-     */
     private @NotNull Map<String, Object> handleDiagnostics(@NotNull RequestContext request) throws Exception {
         FridaDevice device = callOnUiThreadAndWait(() -> {
             ZaFridaRunPanel panel = runPanelRef.get();
@@ -1029,7 +1449,6 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         diagnosticsService.runDiagnostics(project, device, items, new ZaFridaDiagnosticsListener() {
             @Override
             public void onItemUpdated(@NotNull ZaFridaDiagnosticItem item) {
-                // 无需逐项回调
             }
 
             @Override
@@ -1181,6 +1600,23 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return panel;
     }
 
+    private @NotNull VirtualFile resolveFridaScriptFile(@NotNull String rawPath,
+                                                        @NotNull String sessionName) {
+        String path = rawPath.trim();
+        if (path.isEmpty()) {
+            throw new ApiException(400, String.format("Invalid %s script: path is empty", sessionName));
+        }
+        VirtualFile file = LocalFileSystem.getInstance().refreshAndFindFileByPath(path);
+        if (file == null || !file.isValid() || !ProjectFileUtil.isFridaScriptFile(file)) {
+            throw new ApiException(400, String.format(
+                    "Invalid %s script (expected an existing .js or .ts file): %s",
+                    sessionName,
+                    rawPath
+            ));
+        }
+        return file;
+    }
+
     private @NotNull ZaFridaPlatform parsePlatform(@NotNull String raw) {
         String normalized = raw.trim().toLowerCase(Locale.ROOT);
         if ("android".equals(normalized)) {
@@ -1204,6 +1640,37 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             return FridaConnectionMode.GADGET;
         }
         throw new ApiException(400, String.format("Unsupported connection mode: %s", raw));
+    }
+
+    private @NotNull ApiException mapFridaFailure(@NotNull FridaCliException error) {
+        String message = safeErrorMessage(error);
+        if (error.isTimedOut()) {
+            return new ApiException(504, "FRIDA_COMMAND_TIMEOUT", true, message);
+        }
+
+        String details = String.format("%s\n%s\n%s", message, error.getStdout(), error.getStderr())
+                .toLowerCase(Locale.ROOT);
+        if (details.contains("unable to connect")
+                || details.contains("device not found")
+                || details.contains("device disconnected")
+                || details.contains("transport is closed")
+                || details.contains("connection closed")
+                || details.contains("server is not running")
+                || details.contains("timed out")) {
+            return new ApiException(503, "FRIDA_DEVICE_UNAVAILABLE", true, message);
+        }
+        return new ApiException(500, "FRIDA_COMMAND_FAILED", false, message);
+    }
+
+    private static @NotNull String safeErrorMessage(@NotNull Throwable error) {
+        String message = error.getMessage();
+        if (ZaStrUtil.isBlank(message)) {
+            message = error.getClass().getSimpleName();
+        }
+        if (message.length() > 4_000) {
+            return message.substring(0, 4_000);
+        }
+        return message;
     }
 
     private @Nullable Integer parseOptionalPort(@Nullable String text) {
@@ -1233,9 +1700,114 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         }
     }
 
-    /**
-     * 将字节数格式化为可读字符串（如 "14.1 MB"）。
-     */
+    private long parseNonNegativeLong(@Nullable String text, long defaultValue, @NotNull String fieldName) {
+        if (ZaStrUtil.isBlank(text)) {
+            return defaultValue;
+        }
+        try {
+            long value = Long.parseLong(text.trim());
+            if (value < 0L) {
+                throw new ApiException(400, String.format("Invalid %s: %s", fieldName, text));
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new ApiException(400, String.format("Invalid %s: %s", fieldName, text));
+        }
+    }
+
+    private @NotNull Path resolveReadableLogFile(@NotNull String rawPath) throws IOException {
+        Path requested;
+        try {
+            requested = Paths.get(rawPath.trim()).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            throw new ApiException(400, String.format("Invalid log path: %s", rawPath));
+        }
+        if (!Files.isRegularFile(requested)) {
+            throw new ApiException(404, String.format("Log file not found: %s", rawPath));
+        }
+
+        Path realFile = requested.toRealPath();
+        for (Path root : resolveAllowedLogRoots()) {
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            Path realRoot = root.toRealPath();
+            if (realFile.startsWith(realRoot)) {
+                return realFile;
+            }
+        }
+        throw new ApiException(
+                403,
+                "LOG_PATH_OUTSIDE_PROJECT",
+                false,
+                "Only ZAFrida log files under the current IDE project may be read"
+        );
+    }
+
+    private @NotNull List<Path> resolveAllowedLogRoots() {
+        Set<Path> roots = new LinkedHashSet<>();
+        String basePath = project.getBasePath();
+        if (ZaStrUtil.isBlank(basePath)) {
+            return new ArrayList<>();
+        }
+
+        Path ideRoot;
+        try {
+            ideRoot = Paths.get(basePath).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            LOG.debug(String.format("[ZAFrida API] Invalid IDE project path: %s", basePath), e);
+            return new ArrayList<>();
+        }
+        addLogRoot(roots, ideRoot);
+
+        for (ZaFridaFridaProject fridaProject : projectManager.listProjects()) {
+            try {
+                Path projectRoot = ideRoot.resolve(fridaProject.getRelativeDir()).normalize();
+                if (projectRoot.startsWith(ideRoot)) {
+                    addLogRoot(roots, projectRoot);
+                }
+            } catch (RuntimeException e) {
+                LOG.debug(String.format("[ZAFrida API] Invalid ZAFrida project path: %s",
+                        fridaProject.getRelativeDir()), e);
+            }
+        }
+        return new ArrayList<>(roots);
+    }
+
+    private void addLogRoot(@NotNull Set<Path> roots, @NotNull Path base) {
+        Path logRoot = ZaFridaLogPaths.resolveLogsDir(base.toString());
+        if (logRoot != null) {
+            roots.add(logRoot.toAbsolutePath().normalize());
+        }
+    }
+
+    private boolean matchesLogType(@NotNull Path path, @NotNull String type) {
+        if ("all".equals(type)) {
+            return true;
+        }
+        return type.equals(detectLogType(path));
+    }
+
+    private @NotNull String detectLogType(@NotNull Path path) {
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith("_attach.log") || name.matches(".*_attach_[0-9]+\\.log")) {
+            return "attach";
+        }
+        if (name.endsWith("_run.log") || name.matches(".*_run_[0-9]+\\.log")) {
+            return "run";
+        }
+        return "other";
+    }
+
+    private long lastModifiedMillis(@NotNull Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException e) {
+            LOG.debug(String.format("[ZAFrida API] Read log mtime failed: %s", path), e);
+            return 0L;
+        }
+    }
+
     private static @NotNull String formatFileSize(long bytes) {
         if (bytes < 1024L) {
             return bytes + " B";
@@ -1249,16 +1821,10 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 
-    /**
-     * 安全获取文件大小；路径无效或文件不存在时返回 0。
-     */
     private long computeFileSize(@Nullable String path) {
         return computeFileSize(path, true);
     }
 
-    /**
-     * 安全获取文件大小。若 existsHint 为 false 且路径格式为控制台标记则跳过磁盘检查。
-     */
     private long computeFileSize(@Nullable String path, boolean existsHint) {
         if (ZaStrUtil.isBlank(path)) {
             return 0L;
@@ -1285,6 +1851,49 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("action", action);
         data.put("accepted", true);
+        return data;
+    }
+
+    private @NotNull Map<String, Object> buildSessionStatus(@NotNull ZaFridaSessionType type,
+                                                            @Nullable String logPath) {
+        RunningSession runningSession = sessionService.getRunningSession(type);
+        boolean running = runningSession != null;
+        String effectiveLogPath = logPath;
+        if (runningSession != null) {
+            effectiveLogPath = runningSession.getLogFilePath();
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        String state = "stopped";
+        if (running) {
+            state = "running";
+        }
+        data.put("state", state);
+        data.put("running", running);
+        data.put("logPath", effectiveLogPath);
+        data.put("logFileSize", computeFileSize(effectiveLogPath));
+        if (runningSession != null) {
+            data.put("startedAt", runningSession.getStartedAtEpochMillis());
+            data.put("command", runningSession.getCommandLine());
+        }
+        return data;
+    }
+
+    private @Nullable Map<String, Object> environmentToMap(@Nullable PythonEnvInfo environment) {
+        if (environment == null) {
+            return null;
+        }
+        ZaFridaSettingsState settings = settingsService.getState();
+        Map<String, Object> tools = new LinkedHashMap<>();
+        tools.put("frida", ProjectPythonEnvResolver.findTool(environment, settings.fridaExecutable));
+        tools.put("fridaPs", ProjectPythonEnvResolver.findTool(environment, settings.fridaPsExecutable));
+        tools.put("fridaLsDevices", ProjectPythonEnvResolver.findTool(environment, settings.fridaLsDevicesExecutable));
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("source", environment.getSource().name().toLowerCase(Locale.ROOT));
+        data.put("python", environment.getPythonHome());
+        data.put("root", environment.getEnvRoot());
+        data.put("pathEntries", environment.getPathEntries());
+        data.put("tools", tools);
         return data;
     }
 
@@ -1324,6 +1933,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         data.put("attachScript", cfg.attachScript);
         data.put("lastDeviceId", cfg.lastDeviceId);
         data.put("lastDeviceHost", cfg.lastDeviceHost);
+        data.put("pythonEnvironmentPath", cfg.pythonEnvironmentPath);
         return data;
     }
 
@@ -1340,19 +1950,13 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return data;
     }
 
-    /**
-     * 在 EDT 上执行有返回值的操作并同步等待结果。
-     * <p>
-     * 注意：Callable 的返回值不能为 null，否则 @NotNull 契约会在运行时崩溃。
-     * 对于无返回值的操作（如 triggerRun），请使用 {@link #runOnUiThreadAndWait(Runnable)}。
-     */
     private <T> @NotNull T callOnUiThreadAndWait(@NotNull Callable<T> callable) throws Exception {
         if (ApplicationManager.getApplication().isDispatchThread()) {
             return callable.call();
         }
 
         CompletableFuture<T> future = new CompletableFuture<>();
-        ApplicationManager.getApplication().invokeLater(() -> {
+        ApplicationManager.getApplication().invokeAndWait(() -> {
             if (project.isDisposed()) {
                 future.completeExceptionally(new ApiException(410, "Project disposed"));
                 return;
@@ -1363,62 +1967,17 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
             } catch (Throwable t) {
                 future.completeExceptionally(t);
             }
-        }, ModalityState.NON_MODAL);
+        }, ModalityState.any());
         return waitFuture(future, "UI operation timeout");
     }
 
-    /**
-     * 在 EDT 上执行无返回值的操作并同步等待完成。
-     * <p>
-     * 与 {@link #callOnUiThreadAndWait(Callable)} 不同，此方法不经过 @NotNull 约束的 waitFuture，
-     * 避免 return null 导致运行时 @NotNull 违规崩溃。
-     */
     private void runOnUiThreadAndWait(@NotNull Runnable action) throws Exception {
-        if (ApplicationManager.getApplication().isDispatchThread()) {
+        callOnUiThreadAndWait(() -> {
             action.run();
-            return;
-        }
-
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        ApplicationManager.getApplication().invokeLater(() -> {
-            if (project.isDisposed()) {
-                future.completeExceptionally(new ApiException(410, "Project disposed"));
-                return;
-            }
-            try {
-                action.run();
-                future.complete(null);
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
-            }
-        }, ModalityState.NON_MODAL);
-
-        try {
-            future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ApiException(500, "Interrupted");
-        } catch (TimeoutException e) {
-            throw new ApiException(504, "UI operation timeout");
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof ApiException apiException) {
-                throw apiException;
-            }
-            String message = null;
-            if (cause != null) {
-                message = cause.getMessage();
-            }
-            if (ZaStrUtil.isBlank(message)) {
-                message = "Execution failed";
-            }
-            throw new ApiException(500, message);
-        }
+            return Boolean.TRUE;
+        });
     }
 
-    /**
-     * 等待 Void 类型的 Future 完成（不经过 @NotNull 返回值约束）。
-     */
     private void awaitVoidFuture(@NotNull CompletableFuture<Void> future, @NotNull String timeoutMessage) {
         try {
             future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -1468,8 +2027,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     }
 
     private void writeNoContent(@NotNull HttpExchange exchange) throws IOException {
-        Headers headers = exchange.getResponseHeaders();
-        fillCommonHeaders(headers);
+        fillCommonHeaders(exchange);
         exchange.sendResponseHeaders(204, -1);
     }
 
@@ -1481,10 +2039,16 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         writeJson(exchange, 200, payload);
     }
 
-    private void writeError(@NotNull HttpExchange exchange, int statusCode, @NotNull String message) throws IOException {
+    private void writeError(@NotNull HttpExchange exchange,
+                            int statusCode,
+                            @NotNull String errorCode,
+                            boolean retryable,
+                            @NotNull String message) throws IOException {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("ok", false);
         payload.put("status", statusCode);
+        payload.put("errorCode", errorCode);
+        payload.put("retryable", retryable);
         payload.put("message", message);
         writeJson(exchange, statusCode, payload);
     }
@@ -1494,17 +2058,50 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
                            @NotNull Map<String, Object> payload) throws IOException {
         byte[] bytes = toJson(payload).getBytes(StandardCharsets.UTF_8);
         Headers headers = exchange.getResponseHeaders();
-        fillCommonHeaders(headers);
+        fillCommonHeaders(exchange);
         headers.set("Content-Type", "application/json; charset=utf-8");
+        headers.set("X-Content-Type-Options", "nosniff");
         exchange.sendResponseHeaders(statusCode, bytes.length);
         exchange.getResponseBody().write(bytes);
     }
 
-    private void fillCommonHeaders(@NotNull Headers headers) {
-        headers.set("Access-Control-Allow-Origin", "*");
+    private void fillCommonHeaders(@NotNull HttpExchange exchange) {
+        Headers headers = exchange.getResponseHeaders();
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (ZaStrUtil.isNotBlank(origin) && isAllowedLocalOrigin(origin)) {
+            headers.set("Access-Control-Allow-Origin", origin);
+            headers.set("Vary", "Origin");
+        }
         headers.set("Access-Control-Allow-Headers", "Content-Type");
         headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
         headers.set("Cache-Control", "no-store");
+    }
+
+    private void validateRequestOrigin(@NotNull HttpExchange exchange) {
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (ZaStrUtil.isBlank(origin)) {
+            return;
+        }
+        if (!isAllowedLocalOrigin(origin)) {
+            throw new ApiException(403, "ORIGIN_NOT_ALLOWED", false,
+                    String.format("Browser origin is not allowed: %s", origin));
+        }
+    }
+
+    private boolean isAllowedLocalOrigin(@NotNull String origin) {
+        try {
+            URI uri = URI.create(origin.trim());
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+            return "127.0.0.1".equals(host)
+                    || "localhost".equalsIgnoreCase(host)
+                    || "::1".equals(host)
+                    || "[::1]".equals(host);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private @NotNull String toJson(@Nullable Object value) {
@@ -1593,10 +2190,21 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
     private static final class ApiException extends RuntimeException {
         private final int statusCode;
+        private final @NotNull String errorCode;
+        private final boolean retryable;
 
         private ApiException(int statusCode, @NotNull String message) {
+            this(statusCode, String.format("HTTP_%s", statusCode), statusCode >= 500, message);
+        }
+
+        private ApiException(int statusCode,
+                             @NotNull String errorCode,
+                             boolean retryable,
+                             @NotNull String message) {
             super(message);
             this.statusCode = statusCode;
+            this.errorCode = errorCode;
+            this.retryable = retryable;
         }
     }
 
@@ -1616,6 +2224,19 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
             String method = exchange.getRequestMethod();
             if ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method)) {
+                String contentLength = exchange.getRequestHeaders().getFirst("Content-Length");
+                if (ZaStrUtil.isNotBlank(contentLength)) {
+                    try {
+                        long declaredLength = Long.parseLong(contentLength.trim());
+                        if (declaredLength > MAX_REQUEST_BODY_BYTES) {
+                            throw new ApiException(413, "REQUEST_BODY_TOO_LARGE", false,
+                                    String.format("Request body exceeds %s bytes", MAX_REQUEST_BODY_BYTES));
+                        }
+                    } catch (NumberFormatException e) {
+                        throw new ApiException(400, "INVALID_CONTENT_LENGTH", false,
+                                String.format("Invalid Content-Length: %s", contentLength));
+                    }
+                }
                 byte[] bodyBytes = readAll(exchange.getRequestBody());
                 if (bodyBytes.length > 0) {
                     String body = new String(bodyBytes, StandardCharsets.UTF_8);
@@ -1660,13 +2281,22 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
                 if (read == 0) {
                     continue;
                 }
+                if (outputStream.size() + read > MAX_REQUEST_BODY_BYTES) {
+                    throw new ApiException(413, "REQUEST_BODY_TOO_LARGE", false,
+                            String.format("Request body exceeds %s bytes", MAX_REQUEST_BODY_BYTES));
+                }
                 outputStream.write(buffer, 0, read);
             }
             return outputStream.toByteArray();
         }
 
         private static @NotNull String decode(@NotNull String text) {
-            return URLDecoder.decode(text, StandardCharsets.UTF_8);
+            try {
+                return URLDecoder.decode(text, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                throw new ApiException(400, "INVALID_PARAMETER_ENCODING", false,
+                        "Request parameter contains invalid percent encoding");
+            }
         }
 
         private @Nullable String get(@NotNull String key) {
@@ -1724,11 +2354,26 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         private final @NotNull String path;
         private final @NotNull String consoleText;
         private final boolean existsOnDisk;
+        private final boolean consoleTruncated;
 
-        private LogState(@NotNull String path, @NotNull String consoleText, boolean existsOnDisk) {
+        private LogState(@NotNull String path,
+                         @NotNull String consoleText,
+                         boolean existsOnDisk,
+                         boolean consoleTruncated) {
             this.path = path;
             this.consoleText = consoleText;
             this.existsOnDisk = existsOnDisk;
+            this.consoleTruncated = consoleTruncated;
+        }
+    }
+
+    private static final class ByteChunk {
+        private final long startOffset;
+        private final byte @NotNull [] bytes;
+
+        private ByteChunk(long startOffset, byte @NotNull [] bytes) {
+            this.startOffset = startOffset;
+            this.bytes = bytes;
         }
     }
 }

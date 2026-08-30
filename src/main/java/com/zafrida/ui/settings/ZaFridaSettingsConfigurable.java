@@ -5,6 +5,7 @@ import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.zafrida.ui.api.ZaFridaLocalHttpApiService;
+import com.zafrida.ui.frida.FridaCliService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -12,49 +13,25 @@ import javax.swing.JComponent;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * [UI入口] IDE "Settings/Preferences" 菜单集成。
- * <p>
- * <strong>功能：</strong>
- * 将 {@link ZaFridaSettingsComponent} (UI 面板) 注册到 IntelliJ 的设置树中。
- * 负责在 UI 和 {@link ZaFridaSettingsService} (持久化状态) 之间同步数据（Apply/Reset 逻辑）。
- */
 public final class ZaFridaSettingsConfigurable implements SearchableConfigurable {
 
-    /** 全局设置服务 */
     private final ZaFridaSettingsService settingsService;
-    /** UI 组件实例 */
     private @Nullable ZaFridaSettingsComponent component;
 
-    /**
-     * 构造函数。
-     */
     public ZaFridaSettingsConfigurable() {
         this.settingsService = ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
     }
 
-    /**
-     * 配置项 ID。
-     * @return 配置 ID
-     */
     @Override
     public @NotNull String getId() {
         return "com.zafrida.ui.settings";
     }
 
-    /**
-     * 配置项显示名称。
-     * @return 显示名称
-     */
     @Override
     public String getDisplayName() {
         return "ZAFrida";
     }
 
-    /**
-     * 创建设置面板组件。
-     * @return UI 组件
-     */
     @Override
     public @Nullable JComponent createComponent() {
         ZaFridaSettingsComponent c = new ZaFridaSettingsComponent();
@@ -65,10 +42,6 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return c.getPanel();
     }
 
-    /**
-     * 判断配置是否被修改。
-     * @return true 表示有修改
-     */
     @Override
     public boolean isModified() {
         if (component == null) {
@@ -132,9 +105,6 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return false;
     }
 
-    /**
-     * 应用设置改动。
-     */
     @Override
     public void apply() {
         if (component == null) {
@@ -147,13 +117,11 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         ZaFridaSettingsState newState = createSnapshotFromCurrentState();
         component.applyTo(newState);
         settingsService.loadState(newState);
+        ApplicationManager.getApplication().getService(FridaCliService.class).clearDetectedProjectVersions();
 
         applySkillsApiChangeAsync(oldEnabled, oldPort, newState.enableSkillsHttpApi, newState.skillsApiPort);
     }
 
-    /**
-     * 重置 UI 为当前持久化状态。
-     */
     @Override
     public void reset() {
         if (component != null) {
@@ -162,17 +130,11 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         }
     }
 
-    /**
-     * 释放 UI 资源。
-     */
     @Override
     public void disposeUIResources() {
         component = null;
     }
 
-    /**
-     * 手动启动 Skills API（按钮/勾选触发）。
-     */
     private void handleManualStartSkillsApi() {
         ZaFridaSettingsComponent currentComponent = component;
         if (currentComponent == null) {
@@ -180,17 +142,14 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         }
         currentComponent.setSkillsApiStatus("Starting...", false);
 
-        ZaFridaSettingsState state = settingsService.getState();
-        state.enableSkillsHttpApi = currentComponent.isSkillsApiEnabled();
-        state.skillsApiPort = currentComponent.getSkillsApiPort();
-
-        if (!state.enableSkillsHttpApi) {
+        if (!currentComponent.isSkillsApiEnabled()) {
             currentComponent.setSkillsApiStatus("Disabled", false);
             return;
         }
+        int requestedPort = currentComponent.getSkillsApiPort();
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            ApiControlResult result = startSkillsApiForOpenProjects(false);
+            ApiControlResult result = startSkillsApiForOpenProjects(false, requestedPort);
             ApplicationManager.getApplication().invokeLater(() -> {
                 ZaFridaSettingsComponent c = component;
                 if (c == null) {
@@ -204,19 +163,13 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         });
     }
 
-    /**
-     * 手动停止 Skills API（按钮/取消勾选触发）。
-     */
     private void handleManualStopSkillsApi() {
         ZaFridaSettingsComponent currentComponent = component;
         if (currentComponent == null) {
             return;
         }
         currentComponent.setSkillsApiStatus("Stopping...", true);
-
-        ZaFridaSettingsState state = settingsService.getState();
-        state.enableSkillsHttpApi = currentComponent.isSkillsApiEnabled();
-        state.skillsApiPort = currentComponent.getSkillsApiPort();
+        boolean enabledInEditor = currentComponent.isSkillsApiEnabled();
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             stopSkillsApiForOpenProjects();
@@ -225,7 +178,7 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
                 if (c == null) {
                     return;
                 }
-                if (state.enableSkillsHttpApi) {
+                if (enabledInEditor) {
                     c.setSkillsApiStatus("Stopped", false);
                 } else {
                     c.setSkillsApiStatus("Disabled", false);
@@ -234,9 +187,6 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         });
     }
 
-    /**
-     * 按开关和端口变更处理 Skills API 生命周期。
-     */
     private void applySkillsApiChangeAsync(boolean oldEnabled, int oldPort, boolean newEnabled, int newPort) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             if (!newEnabled) {
@@ -251,7 +201,7 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
             }
 
             boolean shouldRestart = !oldEnabled || oldPort != newPort;
-            ApiControlResult result = startSkillsApiForOpenProjects(shouldRestart);
+            ApiControlResult result = startSkillsApiForOpenProjects(shouldRestart, null);
             ApplicationManager.getApplication().invokeLater(() -> {
                 ZaFridaSettingsComponent c = component;
                 if (c == null) {
@@ -265,9 +215,6 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         });
     }
 
-    /**
-     * 刷新设置页中的 Skills API 状态。
-     */
     private void refreshSkillsApiStatusAsync() {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             ApiControlResult result = querySkillsApiStatus();
@@ -310,7 +257,8 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return new ApiControlResult(true, String.format("Running (%s, port=%s)", runningCount, samplePort), "");
     }
 
-    private @NotNull ApiControlResult startSkillsApiForOpenProjects(boolean restart) {
+    private @NotNull ApiControlResult startSkillsApiForOpenProjects(boolean restart,
+                                                                    @Nullable Integer requestedPort) {
         List<Project> openProjects = listOpenProjects();
         if (openProjects.isEmpty()) {
             return new ApiControlResult(false, "No open project", "");
@@ -322,10 +270,21 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         for (Project project : openProjects) {
             ZaFridaLocalHttpApiService service = project.getService(ZaFridaLocalHttpApiService.class);
             boolean ok;
-            if (restart) {
-                ok = service.restartServerNow();
+            boolean portChanged = requestedPort != null
+                    && service.isServerRunning()
+                    && service.getBoundPort() != requestedPort;
+            if (restart || portChanged) {
+                if (requestedPort == null) {
+                    ok = service.restartServerNow();
+                } else {
+                    ok = service.restartServerNow(requestedPort);
+                }
             } else {
-                ok = service.startServerNow();
+                if (requestedPort == null) {
+                    ok = service.startServerNow();
+                } else {
+                    ok = service.startServerNow(requestedPort);
+                }
             }
             if (ok && service.isServerRunning()) {
                 runningCount++;
@@ -401,12 +360,6 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return copy;
     }
 
-    /**
-     * 安全比较字符串相等性。
-     * @param a 字符串 A
-     * @param b 字符串 B
-     * @return true 表示相等
-     */
     private static boolean safeEq(String a, String b) {
         if (a == null) {
             return b == null;
@@ -414,9 +367,6 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         return a.equals(b);
     }
 
-    /**
-     * Skills API 批量控制结果。
-     */
     private static final class ApiControlResult {
         private final boolean running;
         private final @NotNull String statusText;
@@ -429,4 +379,3 @@ public final class ZaFridaSettingsConfigurable implements SearchableConfigurable
         }
     }
 }
-

@@ -7,24 +7,24 @@ import com.zafrida.ui.settings.ZaFridaSettingsState;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * [上下文] 诊断执行上下文。
- */
 public final class ZaFridaDiagnosticsContext {
 
     private final @NotNull Project project;
     private final @Nullable FridaDevice device;
     private final @NotNull ZaFridaSettingsState settings;
     private final @Nullable PythonEnvInfo pythonEnv;
+    private final @Nullable String pythonEnvError;
 
     public ZaFridaDiagnosticsContext(@NotNull Project project,
                                      @Nullable FridaDevice device,
                                      @NotNull ZaFridaSettingsState settings,
-                                     @Nullable PythonEnvInfo pythonEnv) {
+                                     @Nullable PythonEnvInfo pythonEnv,
+                                     @Nullable String pythonEnvError) {
         this.project = project;
         this.device = device;
         this.settings = settings;
         this.pythonEnv = pythonEnv;
+        this.pythonEnvError = pythonEnvError;
     }
 
     public @NotNull Project getProject() {
@@ -41,5 +41,9 @@ public final class ZaFridaDiagnosticsContext {
 
     public @Nullable PythonEnvInfo getPythonEnv() {
         return pythonEnv;
+    }
+
+    public @Nullable String getPythonEnvError() {
+        return pythonEnvError;
     }
 }

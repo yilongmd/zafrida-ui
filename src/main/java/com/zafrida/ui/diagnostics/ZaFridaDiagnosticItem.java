@@ -5,9 +5,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * [模型] 单项诊断配置与状态。
- */
 public final class ZaFridaDiagnosticItem {
 
     private final @NotNull String id;

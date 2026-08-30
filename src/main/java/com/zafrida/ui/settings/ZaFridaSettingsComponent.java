@@ -30,84 +30,41 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-/**
- * [UI组件] 全局设置面板的 Swing 实现。
- * <p>
- * <strong>包含控件：</strong>
- * <ul>
- * <li>Frida 工具链路径输入框 (frida, frida-ps, frida-ls-devices)。</li>
- * <li>VS Code 路径输入框（可选，用于一键打开日志文件）。</li>
- * <li>010 Editor 路径输入框（可选，用于一键打开二进制日志/trace 文件）。</li>
- * <li>日志目录配置。</li>
- * <li>远程主机列表 (Remote Hosts) 管理。</li>
- * </ul>
- * 它是 {@link ZaFridaSettingsConfigurable} 的视图层。
- */
+
 public final class ZaFridaSettingsComponent {
 
-    /** ZAFRIDA 根目录名 */
     private static final String ZAFRIDA_DIR_NAME = ".zafrida";
-    /** 模板目录名 */
     private static final String TEMPLATES_DIR_NAME = "templates";
 
-    /** frida 路径输入框 */
     private final JBTextField fridaField = new JBTextField();
-    /** frida-ps 路径输入框 */
     private final JBTextField fridaPsField = new JBTextField();
-    /** frida-ls-devices 路径输入框 */
     private final JBTextField fridaLsDevicesField = new JBTextField();
-    /** Frida 主版本输入框 */
     private final JBTextField fridaVersionField = new JBTextField();
-    /** VS Code 路径输入框 */
     private final JBTextField vscodeField = new JBTextField();
-    /** 010 Editor 路径输入框 */
     private final JBTextField editor010Field = new JBTextField();
-    /** 日志目录输入框 */
     private final JBTextField logsDirField = new JBTextField();
-    /** 默认远程主机输入框 */
     private final JBTextField defaultRemoteHostField = new JBTextField();
-    /** 默认远程端口输入框 */
     private final JBTextField defaultRemotePortField = new JBTextField();
-    /** 是否使用 IDE 脚本选择器 */
     private final JBCheckBox useIdeScriptChooserCheckBox = new JBCheckBox("Use IDE script chooser (Project tree)");
-    /** 是否开启 Skills 本地 HTTP API */
     private final JBCheckBox enableSkillsHttpApiCheckBox = new JBCheckBox("Enable Skills local HTTP API");
-    /** Skills 本地 HTTP API 端口 */
     private final JBTextField skillsApiPortField = new JBTextField();
-    /** 手动启动 Skills API */
     private final JButton startSkillsApiBtn = new JButton("Start");
-    /** 手动停止 Skills API */
     private final JButton stopSkillsApiBtn = new JButton("Stop");
-    /** Skills API 状态提示 */
     private final JLabel skillsApiStatusLabel = new JLabel("Stopped");
-    /** 模板根目录模式下拉框 */
     private final JComboBox<TemplateRootOption> templatesRootModeCombo = new JComboBox<>();
-    /** 模板根目录路径显示框 */
     private final TextFieldWithBrowseButton templatesRootPathField = new TextFieldWithBrowseButton();
 
-    /** 远程主机列表模型 */
     private final DefaultListModel<String> remoteModel = new DefaultListModel<>();
-    /** 远程主机列表组件 */
     private final JBList<String> remoteList = new JBList<>(remoteModel);
-    /** 添加远程主机按钮 */
     private final JButton addRemoteBtn = new JButton("Add");
-    /** 移除远程主机按钮 */
     private final JButton removeRemoteBtn = new JButton("Remove");
 
-    /** 根面板 */
     private final JComponent panel;
-    /** 手动启动回调 */
     private @Nullable Runnable startSkillsApiHandler;
-    /** 手动停止回调 */
     private @Nullable Runnable stopSkillsApiHandler;
-    /** 当前运行状态 */
     private boolean skillsApiRunning = false;
-    /** UI 是否在批量更新中 */
     private boolean updatingUi = false;
 
-    /**
-     * 构造函数，初始化 UI。
-     */
     public ZaFridaSettingsComponent() {
         addRemoteBtn.setIcon(AllIcons.General.Add);
         removeRemoteBtn.setIcon(AllIcons.General.Remove);
@@ -128,7 +85,9 @@ public final class ZaFridaSettingsComponent {
         defaultRemotePortField.getEmptyText().setText("14725");
         skillsApiPortField.getEmptyText().setText(String.valueOf(ZaFridaSettingsState.DEFAULT_SKILLS_API_PORT));
         fridaVersionField.getEmptyText().setText(ZaFridaSettingsService.DEFAULT_FRIDA_VERSION);
-        fridaVersionField.setToolTipText("Frida major version. e.g. 16 / 17");
+        fridaVersionField.setToolTipText(
+                "Fallback used before the active project's Python environment version has been detected"
+        );
         vscodeField.getEmptyText().setText("code / code.cmd / Code.exe");
         vscodeField.setToolTipText("Optional. Used for opening log file in VS Code.");
         editor010Field.getEmptyText().setText("/Applications/010 Editor.app / 010Editor.exe");
@@ -166,7 +125,7 @@ public final class ZaFridaSettingsComponent {
                 .addLabeledComponent("frida", fridaField, 1, false)
                 .addLabeledComponent("frida-ps", fridaPsField, 1, false)
                 .addLabeledComponent("frida-ls-devices", fridaLsDevicesField, 1, false)
-                .addLabeledComponent("Frida Version", fridaVersionField, 1, false)
+                .addLabeledComponent("Frida Version (fallback)", fridaVersionField, 1, false)
                 .addLabeledComponent("VS Code (optional)", vscodeField, 1, false)
                 .addLabeledComponent("010 Editor (optional)", editor010Field, 1, false)
                 .addLabeledComponent("Logs Dir (relative to project)", logsDirField, 1, false)
@@ -230,41 +189,22 @@ public final class ZaFridaSettingsComponent {
         updateSkillsApiControlsEnabled();
     }
 
-    /**
-     * 获取根面板。
-     * @return 面板组件
-     */
     public @NotNull JComponent getPanel() {
         return panel;
     }
 
-    /**
-     * 绑定 Skills API 的手动控制回调。
-     * @param startHandler 启动回调
-     * @param stopHandler 停止回调
-     */
     public void bindSkillsApiActions(@Nullable Runnable startHandler, @Nullable Runnable stopHandler) {
         this.startSkillsApiHandler = startHandler;
         this.stopSkillsApiHandler = stopHandler;
         updateSkillsApiControlsEnabled();
     }
 
-    /**
-     * 设置 Skills API 状态文案与运行态。
-     * @param status 文案
-     * @param running 是否运行中
-     */
     public void setSkillsApiStatus(@NotNull String status, boolean running) {
         skillsApiStatusLabel.setText(status);
         skillsApiRunning = running;
         updateSkillsApiControlsEnabled();
     }
 
-    /**
-     * 展示 Skills API 操作提示。
-     * @param message 提示文本
-     * @param error 是否错误提示
-     */
     public void showSkillsApiTip(@NotNull String message, boolean error) {
         if (error) {
             Messages.showErrorDialog(panel, message, "ZAFrida");
@@ -273,26 +213,14 @@ public final class ZaFridaSettingsComponent {
         Messages.showInfoMessage(panel, message, "ZAFrida");
     }
 
-    /**
-     * 是否开启 Skills API。
-     * @return true 表示开启
-     */
     public boolean isSkillsApiEnabled() {
         return enableSkillsHttpApiCheckBox.isSelected();
     }
 
-    /**
-     * 读取 Skills API 端口。
-     * @return 端口号
-     */
     public int getSkillsApiPort() {
         return parsePort(skillsApiPortField.getText(), ZaFridaSettingsState.DEFAULT_SKILLS_API_PORT);
     }
 
-    /**
-     * 使用状态重置 UI。
-     * @param state 配置状态
-     */
     public void reset(@NotNull ZaFridaSettingsState state) {
         updatingUi = true;
         try {
@@ -304,7 +232,11 @@ public final class ZaFridaSettingsComponent {
             editor010Field.setText(orDefault(state.editor010Executable, ""));
             logsDirField.setText(orDefault(state.logsDirName, "zafrida-logs"));
             defaultRemoteHostField.setText(orDefault(state.defaultRemoteHost, "127.0.0.1"));
-            defaultRemotePortField.setText(String.valueOf(state.defaultRemotePort > 0 ? state.defaultRemotePort : 14725));
+            int remotePort = 14725;
+            if (state.defaultRemotePort > 0) {
+                remotePort = state.defaultRemotePort;
+            }
+            defaultRemotePortField.setText(String.valueOf(remotePort));
             useIdeScriptChooserCheckBox.setSelected(state.useIdeScriptChooser);
             enableSkillsHttpApiCheckBox.setSelected(state.enableSkillsHttpApi);
             int apiPort = state.skillsApiPort;
@@ -324,17 +256,17 @@ public final class ZaFridaSettingsComponent {
                 }
             }
             skillsApiRunning = false;
-            skillsApiStatusLabel.setText(state.enableSkillsHttpApi ? "Stopped" : "Disabled");
+            if (state.enableSkillsHttpApi) {
+                skillsApiStatusLabel.setText("Stopped");
+            } else {
+                skillsApiStatusLabel.setText("Disabled");
+            }
             updateSkillsApiControlsEnabled();
         } finally {
             updatingUi = false;
         }
     }
 
-    /**
-     * 将 UI 值写回状态对象。
-     * @param state 配置状态
-     */
     public void applyTo(@NotNull ZaFridaSettingsState state) {
         state.fridaExecutable = textOrDefault(fridaField.getText(), "frida");
         state.fridaPsExecutable = textOrDefault(fridaPsField.getText(), "frida-ps");
@@ -357,9 +289,6 @@ public final class ZaFridaSettingsComponent {
         state.remoteHosts = remotes;
     }
 
-    /**
-     * 更新模板路径显示。
-     */
     private void updateTemplatesRootPathField() {
         String mode = getSelectedTemplatesRootMode();
         Path root = resolveTemplatesRootPreview(mode);
@@ -372,9 +301,6 @@ public final class ZaFridaSettingsComponent {
         templatesRootPathField.setToolTipText(root.toString());
     }
 
-    /**
-     * 打开或定位模板目录。
-     */
     private void locateTemplatesFolder() {
         String mode = getSelectedTemplatesRootMode();
         Path root = resolveTemplatesRootPreview(mode);
@@ -389,10 +315,6 @@ public final class ZaFridaSettingsComponent {
         }
     }
 
-    /**
-     * 使用系统文件管理器打开模板目录。
-     * @param root 模板根目录
-     */
     private void openTemplatesFolderInSystem(@NotNull Path root) {
         if (!Desktop.isDesktopSupported()) {
             Messages.showWarningDialog(panel, "Desktop open is not supported on this platform.", "ZAFrida");
@@ -410,10 +332,6 @@ public final class ZaFridaSettingsComponent {
         }
     }
 
-    /**
-     * 在 IDE 中定位模板目录。
-     * @param root 模板根目录
-     */
     private void openTemplatesFolderInIde(@NotNull Path root) {
         Project project = resolveActiveProject();
         if (project == null) {
@@ -428,11 +346,6 @@ public final class ZaFridaSettingsComponent {
         ProjectFileUtil.openAndSelectInProject(project, dir);
     }
 
-    /**
-     * 预览模板根目录路径。
-     * @param mode 模板根目录模式
-     * @return 预览路径或 null
-     */
     private @Nullable Path resolveTemplatesRootPreview(@NotNull String mode) {
         if (ZaFridaSettingsState.TEMPLATE_ROOT_MODE_IDE.equals(mode)) {
             Project project = resolveActiveProject();
@@ -452,10 +365,6 @@ public final class ZaFridaSettingsComponent {
         return Paths.get(userHome, ZAFRIDA_DIR_NAME, TEMPLATES_DIR_NAME);
     }
 
-    /**
-     * 尝试获取当前打开的项目。
-     * @return Project 或 null
-     */
     private @Nullable Project resolveActiveProject() {
         Project[] projects = ProjectManager.getInstance().getOpenProjects();
         if (projects.length == 0) {
@@ -469,10 +378,6 @@ public final class ZaFridaSettingsComponent {
         return null;
     }
 
-    /**
-     * 获取当前选中的模板根目录模式。
-     * @return 模式值
-     */
     private @NotNull String getSelectedTemplatesRootMode() {
         TemplateRootOption option = (TemplateRootOption) templatesRootModeCombo.getSelectedItem();
         if (option == null) {
@@ -481,10 +386,6 @@ public final class ZaFridaSettingsComponent {
         return option.getId();
     }
 
-    /**
-     * 设置模板根目录模式选择。
-     * @param mode 模式值
-     */
     private void setSelectedTemplatesRootMode(@Nullable String mode) {
         String normalized = normalizeTemplatesRootMode(mode);
         int count = templatesRootModeCombo.getItemCount();
@@ -500,11 +401,6 @@ public final class ZaFridaSettingsComponent {
         }
     }
 
-    /**
-     * 标准化模板根目录模式值。
-     * @param mode 原始值
-     * @return 标准化后的模式值
-     */
     private @NotNull String normalizeTemplatesRootMode(@Nullable String mode) {
         if (mode == null || mode.trim().isEmpty()) {
             return ZaFridaSettingsState.TEMPLATE_ROOT_MODE_SYSTEM;
@@ -516,24 +412,15 @@ public final class ZaFridaSettingsComponent {
         return ZaFridaSettingsState.TEMPLATE_ROOT_MODE_SYSTEM;
     }
 
-    /**
-     * 判断远程主机是否已存在。
-     * @param host 主机字符串
-     * @return true 表示已存在
-     */
     private boolean containsRemote(String host) {
         for (int i = 0; i < remoteModel.size(); i++) {
-            if (host.equals(remoteModel.getElementAt(i))) return true;
+            if (host.equals(remoteModel.getElementAt(i))) {
+                return true;
+            }
         }
         return false;
     }
 
-    /**
-     * 获取文本或默认值（允许空白）。
-     * @param s 输入文本
-     * @param d 默认值
-     * @return 结果字符串
-     */
     private static String textOrDefault(String s, String d) {
         if (ZaStrUtil.isBlank(s)) {
             return d;
@@ -541,12 +428,6 @@ public final class ZaFridaSettingsComponent {
         return ZaStrUtil.trim(s);
     }
 
-    /**
-     * 获取文本或默认值（空白视为默认）。
-     * @param s 输入文本
-     * @param d 默认值
-     * @return 结果字符串
-     */
     private static String orDefault(String s, String d) {
         if (ZaStrUtil.isBlank(s)) {
             return d;
@@ -554,9 +435,6 @@ public final class ZaFridaSettingsComponent {
         return s;
     }
 
-    /**
-     * 按开关与运行态更新控件可用性。
-     */
     private void updateSkillsApiControlsEnabled() {
         boolean enabled = enableSkillsHttpApiCheckBox.isSelected();
         skillsApiPortField.setEnabled(enabled);
@@ -569,29 +447,21 @@ public final class ZaFridaSettingsComponent {
         stopSkillsApiBtn.setEnabled(skillsApiRunning);
     }
 
-    /**
-     * 解析端口文本。
-     * @param s 输入文本
-     * @param fallback 回退值
-     * @return 端口值
-     */
     private static int parsePort(String s, int fallback) {
         if (ZaStrUtil.isBlank(s)) {
             return fallback;
         }
         try {
             int v = Integer.parseInt(s.trim());
-            return v > 0 && v <= 65535 ? v : fallback;
+            if (v > 0 && v <= 65535) {
+                return v;
+            }
+            return fallback;
         } catch (NumberFormatException e) {
             return fallback;
         }
     }
 
-    /**
-     * 标准化 Frida 版本输入值。
-     * @param versionText 原始文本
-     * @return 标准化版本号
-     */
     private static @NotNull String normalizeFridaVersion(@Nullable String versionText) {
         if (ZaStrUtil.isBlank(versionText)) {
             return ZaFridaSettingsService.DEFAULT_FRIDA_VERSION;
@@ -603,9 +473,6 @@ public final class ZaFridaSettingsComponent {
         return normalized;
     }
 
-    /**
-     * 模板根目录选项。
-     */
     private static final class TemplateRootOption {
         private final String id;
         private final String label;

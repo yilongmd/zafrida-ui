@@ -8,10 +8,10 @@ if (ObjC.available) {
 
     function listDirectory(path) {
         var error = Memory.alloc(Process.pointerSize);
-        Memory.writePointer(error, NULL);
+        error.writePointer(NULL);
 
         var files = manager.contentsOfDirectoryAtPath_error_(path, error);
-        var err = Memory.readPointer(error);
+        var err = error.readPointer();
 
         if (!err.isNull()) {
             console.log("[ZAFrida] Access denied or empty: " + path);
@@ -28,14 +28,21 @@ if (ObjC.available) {
             var isDirPtr = Memory.alloc(Process.pointerSize);
             manager.fileExistsAtPath_isDirectory_(fullPath, isDirPtr);
 
-            var isDir = Memory.readU8(isDirPtr) === 1;
+            var isDir = isDirPtr.readU8() === 1;
             var marker = isDir ? "[DIR]  " : "[FILE] ";
             console.log(marker + file);
         }
     }
 
     // Get App Home Directory
-    var NSHomeDirectory = new NativeFunction(Module.findExportByName(null, "NSHomeDirectory"), 'pointer', []);
+    var getGlobalExport = Reflect.get(Module, "getGlobalExportByName");
+    if (typeof getGlobalExport !== "function") {
+        var findExportByName = Reflect.get(Module, "findExportByName");
+        getGlobalExport = function(name) {
+            return findExportByName.call(Module, null, name);
+        };
+    }
+    var NSHomeDirectory = new NativeFunction(getGlobalExport.call(Module, "NSHomeDirectory"), 'pointer', []);
     var homeDir = new ObjC.Object(NSHomeDirectory()).toString();
 
     // List common interesting folders

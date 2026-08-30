@@ -31,7 +31,7 @@ To fully use IDE editing capabilities, Git integration, and project management.
 
 ### 0x00 Summary first: what is ZAFrida UI?
 
-**ZAFrida UI is a Frida GUI plugin integrated into PyCharm/IntelliJ. You can right-click a JS file to Run/Attach the current script, and it auto switches to the corresponding ZAFrida project context (device/package/connection/args) based on the script path. It also provides right-click Snippets and a checkbox-based template system to assemble Hook scripts like blocks.**
+**ZAFrida UI is a Frida GUI plugin integrated into PyCharm/IntelliJ. You can right-click a JavaScript or TypeScript file to Run/Attach it, and ZAFrida automatically switches to the matching project context (device/package/connection/args). It also provides editor Snippets and a checkbox-based template system for assembling Hook scripts.**
 
 [Open Source Repo](https://github.com/yilongmd/zafrida-ui)
 
@@ -62,7 +62,7 @@ First open ZAFrida ToolWindow usually auto pops Doctor.
 
 Doctor default checks:
 
-- Project Python SDK
+- Python Environment (active ZAFrida Project override first, otherwise the IDE interpreter)
 - Frida Tools Path
 - frida --version
 - frida-ls-devices
@@ -111,10 +111,10 @@ Then click:
 
 ### 0x06 Key highlight: editor right-click Run/Attach
 
-Open any `.js` file -> right click:
+Open any `.js` / `.ts` file -> right click:
 
-- Run Frida JS
-- Attach Frida JS
+- Run Frida Script
+- Attach Frida Script
 
 > It auto switches to the project based on script path and executes.
 
