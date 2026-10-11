@@ -4,13 +4,21 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-Current Version: 0.3.7
+Current Version: 0.3.8
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![](https://img.shields.io/badge/Author-ZAFrida-orange.svg)](https://github.com/yilongmd/zafrida-ui)
 [![](https://img.shields.io/badge/Platform-IntelliJ-brightgreen.svg)](https://plugins.jetbrains.com/)
 [![GitHub stars](https://img.shields.io/github/stars/yilongmd/zafrida-ui.svg?style=social&label=Stars)](https://github.com/yilongmd/zafrida-ui)
+
+## What's New in 0.3.8
+
+- Device and connection mode are now selected on two separate rows in the Session panel: the Device row lists real devices only, and the Mode row picks USB / Remote / Gadget plus the endpoint. adb port forwarding for loopback Remote/Gadget, Force Stop, and Open App always target the currently selected phone instead of a previously used one.
+- The adb server is started automatically on first open and on device refresh when it is not running, so running `adb devices` by hand is no longer needed.
+- When the saved device is offline, a "not connected" placeholder is shown and device actions are blocked; if exactly one USB device is connected, it is used instead and the Console says so.
+- The line under the Mode row shows the adb/frida route that will actually run; in Gadget mode the Target package is read-only but can be selected and copied.
+- HTTP API: `/state` now includes the resolved `connection`; `device-select --host` still works but is deprecated, use `mode-set --host/--port` for endpoints.
 
 ## What's New in 0.3.7
 

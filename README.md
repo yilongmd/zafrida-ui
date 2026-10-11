@@ -4,13 +4,21 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-当前版本： 0.3.7
+当前版本： 0.3.8
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![](https://img.shields.io/badge/Author-ZAFrida-orange.svg)](https://github.com/yilongmd/zafrida-ui)
 [![](https://img.shields.io/badge/Platform-IntelliJ-brightgreen.svg)](https://plugins.jetbrains.com/)
 [![GitHub stars](https://img.shields.io/github/stars/yilongmd/zafrida-ui.svg?style=social&label=Stars)](https://github.com/yilongmd/zafrida-ui)
+
+## 0.3.8 主要更新
+
+- Session 面板把「设备」与「连接模式」拆成两行独立选择：Device 行只列真实设备，Mode 行选择 USB / Remote / Gadget 与端点。Remote/Gadget 回环的 adb 端口转发、Force Stop、Open App 始终作用于当前选中的手机，不再误用历史设备。
+- 首次打开和刷新设备时自动拉起未运行的 adb server，不必再手动执行 `adb devices`。
+- 已保存的设备不在线时显示「未连接」占位并拦截相关操作；只连着一台 USB 设备时自动改用它并在 Console 提示。
+- Mode 行下方显示实际执行的 adb/frida 路由；Gadget 模式下 Target 包名只读但可选中复制。
+- HTTP API 的 `/state` 新增 `connection` 解析结果；`device-select --host` 仍可用但已弃用，端点请改用 `mode-set --host/--port`。
 
 ## 0.3.7 主要更新
 
