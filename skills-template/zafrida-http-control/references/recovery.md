@@ -39,7 +39,7 @@ ADB 和 Frida 是两条独立链路。`adb devices` 正常不代表 frida-server
 
 1. 通过 `state` 确认连接模式和准确的 `host:port`。
 2. Android loopback 转发场景通过 `diagnostics` 检查 ADB。
-3. 调用 `processes`；`devices` 中的 Remote 条目只代表配置，不代表连接成功。
+3. 调用 `processes`；`state.connection` 只代表配置，不代表连接成功。loopback 场景同时确认 `connection.adbSerial` 是预期的手机。
 4. 传输关闭时，短暂等待后只重试 `processes`；`session-status` 未证明会话停止前，不得重放 Run/Attach。
 
 ## Gadget 恢复

@@ -18,9 +18,9 @@ python3 <skill-dir>/scripts/zafrida_api.py <command> [arguments]
 - `connectionMode` 为 `gadget`，host/port 正确；
 - Target 是 `adb-force-stop` 和 `adb-open-app` 使用的 Android 包名；
 - Run Script 以及当前任务需要时的 Attach Script 路径正确；
-- ADB 转发需要指定设备时，选中了正确的 USB 设备。
+- `connection.adbSerial` 是预期的手机，`connection.sessionBlocker` 为空。设备与模式相互独立：Gadget 模式下仍要用 `device-select --id` 选中真实设备。
 
-loopback Gadget 启动 Frida 前，ZAFrida 会尝试 `adb forward tcp:<port> tcp:<port>`。ADB 或转发不确定时运行 `diagnostics`。`devices` 中的 Gadget 条目只证明配置存在，不代表 Gadget 已就绪。
+loopback Gadget 启动 Frida 前，ZAFrida 会对选中的设备执行 `adb -s <serial> forward tcp:<port> tcp:<port>`；`adb-force-stop` 和 `adb-open-app` 使用同一个 serial。转发失败只告警、不中止 Run，ADB 或转发不确定时运行 `diagnostics`。Gadget 端点不出现在 `devices` 里，`state.connection` 也只说明配置，不代表 Gadget 已就绪。
 
 ## 全新 Gadget Run
 

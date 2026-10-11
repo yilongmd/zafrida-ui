@@ -295,9 +295,15 @@ The Run panel visualizes common frida-tools parameters into UI fields.
 
 #### 2) Device
 
-- Select device (USB / Remote / Gadget)
-- Click **Refresh** to re-enumerate
-- Click **+** to add a remote `host:port` quickly (saved in global Remote Hosts)
+- Select the physical device (which phone). Required in every connection mode: it is the Frida target in USB mode, and in Remote/Gadget mode it decides which phone adb port forwarding, Force Stop and Open App act on
+- Click **Refresh** to re-enumerate; the adb server is started automatically if it is not running, so there is no need to run `adb devices` first
+- If the saved device is offline it is shown as `(not connected)` and runs are blocked; if exactly one USB device is connected it is used temporarily with a notice in the Console
+
+#### 2.1) Mode
+
+- Select the connection mode: USB / Remote / Gadget, independent of Device
+- For Remote / Gadget an endpoint `host:port` appears on the right: type it (Enter to apply) or pick one of the global Remote Hosts
+- The grey line below shows the route that will actually run, e.g. `adb -s <serial> forward tcp:14725 → frida -H 127.0.0.1:14725 -F`
 
 #### 3) Run Script
 

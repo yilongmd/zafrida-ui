@@ -48,7 +48,6 @@ python3 <skill-dir>/scripts/zafrida_api.py python-env-test
 python3 <skill-dir>/scripts/zafrida_api.py devices --retries 2
 python3 <skill-dir>/scripts/zafrida_api.py wait-device --type usb --timeout 60 --interval 2
 python3 <skill-dir>/scripts/zafrida_api.py device-select --id <returned-device-id>
-python3 <skill-dir>/scripts/zafrida_api.py device-select --host 127.0.0.1:14725
 python3 <skill-dir>/scripts/zafrida_api.py mode-set --mode usb
 python3 <skill-dir>/scripts/zafrida_api.py mode-set --mode remote --host 127.0.0.1 --port 14725
 python3 <skill-dir>/scripts/zafrida_api.py mode-set --mode gadget --host 127.0.0.1 --port 14725
@@ -57,7 +56,14 @@ python3 <skill-dir>/scripts/zafrida_api.py processes --scope apps
 python3 <skill-dir>/scripts/zafrida_api.py processes --scope installed
 ```
 
-`wait-device` 未指定 `--id`、`--host` 或 `--type` 时匹配任意设备。未知具体 USB ID 时使用 `--type usb`。`devices` 中合成的 Remote/Gadget 条目只代表配置存在，不能证明端点可连接。
+设备与连接模式是两个独立的选择：
+
+- **设备**（`device-select --id`）是真实手机，决定 USB 模式下的 Frida 目标，以及所有模式下 adb 转发、`adb-force-stop`、`adb-open-app` 使用的 serial。
+- **连接模式**（`mode-set`）决定 Frida 如何连接：`usb`，或 `remote`/`gadget` 加端点 `host:port`。切换模式不会改变选中的设备。
+
+`devices` 只返回真实设备，不再包含 Remote/Gadget 端点；枚举前会在 adb 可用时自动拉起未运行的 ADB server。`state.connection` 给出当前解析结果：`mode`、`fridaDevice`、`adbSerial`、`adbForward`/`forwardPort`、`sessionBlocker`、`adbBlocker` 和 `summary`。`sessionBlocker` 非空时 Run/Attach 不会启动；设备条目 `connected: false` 表示项目保存的设备当前不在线，需要重新 `device-select --id`。
+
+`wait-device` 未指定 `--id` 或 `--type` 时匹配任意设备。未知具体 USB ID 时使用 `--type usb`。`device-select --host` 与 `wait-device --host` 已弃用：前者等价于用 `mode-set` 设置端点（USB 模式下会同时切到 Remote），旧的 `remote:<host:port>` / `gadget:<host:port>` 设备 id 也按同样方式处理；后者直接返回错误。
 
 USB 和 Remote 的标准启动与验证流程见 [standard-modes.md](standard-modes.md)。
 

@@ -11,12 +11,14 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ui.ComboBox;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.components.ActionLink;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
 import com.zafrida.ui.frida.*;
 import com.zafrida.ui.fridaproject.*;
 import com.zafrida.ui.fridaproject.ui.CreateZaFridaProjectDialog;
@@ -27,6 +29,7 @@ import com.zafrida.ui.session.ZaFridaSessionType;
 import com.zafrida.ui.python.ProjectPythonEnvResolver;
 import com.zafrida.ui.python.PythonEnvInfo;
 import com.zafrida.ui.python.PythonEnvResolutionException;
+import com.zafrida.ui.ui.components.ConnectionModePanel;
 import com.zafrida.ui.ui.components.SearchableComboBoxPanel;
 import com.zafrida.ui.ui.components.SimpleDocumentListener;
 import com.zafrida.ui.ui.render.DeviceCellRenderer;
@@ -56,17 +59,23 @@ import java.awt.Insets;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaRunPanel.class);
-    private static final String USB_DEVICE_TYPE = "usb";
-    private static final String ADB_SHELL_COMMAND = "adb shell";
     private static final String ADVANCED_EXPANDED_KEY = "zafrida.session.advanced.expanded";
+    private static final String TARGET_TOOLTIP = "Spawn/Attach uses package name";
+    private static final String GADGET_TARGET_TOOLTIP =
+            "Gadget mode attaches to the frontmost app (-F). Target is read-only here and only used by Force Stop / Open App; edit it in Project settings.";
+    private static final String DEVICES_LOADING_SUMMARY = "Loading devices...";
 
     private final @NotNull Project project;
     private final @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel;
@@ -81,7 +90,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private final ComboBox<FridaDevice> deviceCombo = new ComboBox<>();
     private final JButton refreshDevicesBtn = new JButton("");
-    private final JButton addRemoteBtn = new JButton("");
+    private final ConnectionModePanel connectionModePanel = new ConnectionModePanel();
+    private final JBLabel routeSummaryLabel = new JBLabel();
 
     private final JBTextField runScriptField = new JBTextField();
     private final JButton locateRunScriptBtn = new JButton("");
@@ -114,7 +124,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private volatile @Nullable String lastPrintedPythonEnvironment;
     private boolean warnedNoUsbDevices = false;
-    private @Nullable String lastMissingUsbDeviceId;
+    private @Nullable String lastMissingDeviceId;
+    private @Nullable String announcedDeviceSubstitution;
+    private final Set<String> notifiedMissingDeviceIds = new HashSet<>();
+    private boolean devicesLoading;
+    private int explicitDeviceSelections;
 
     private final ZaFridaProjectManager fridaProjectManager;
     private final SearchableComboBoxPanel<ZaFridaFridaProject> fridaProjectSelector =
@@ -158,6 +172,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         int row = 0;
         row = addRow(form, row, new JLabel("Project"), buildFridaProjectRow());
         row = addRow(form, row, new JLabel("Device"), buildDeviceRow());
+        row = addRow(form, row, new JLabel("Mode"), connectionModePanel);
+        row = addHintRow(form, row, routeSummaryLabel);
         row = addRow(form, row, new JLabel("Run Script"), buildRunScriptRow());
         row = addRow(form, row, new JLabel("Attach Script"), buildAttachScriptRow());
         row = addRow(form, row, new JLabel("Target"), buildTargetRow());
@@ -192,12 +208,20 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         advancedLink.getAccessibleContext().setAccessibleName("Toggle advanced Frida options");
         projectTypeIcon.setToolTipText("Project platform");
 
-        targetField.setToolTipText("Spawn/Attach uses package name");
+        targetField.setToolTipText(TARGET_TOOLTIP);
+        deviceCombo.setToolTipText("Physical device: used by Frida in USB mode and by adb (forward, Force Stop, Open App) in every mode");
+
+        routeSummaryLabel.setFont(JBUI.Fonts.smallFont());
+        routeSummaryLabel.setForeground(UIUtil.getContextHelpForeground());
+        // GridBagLayout 在首选尺寸放不下时会整体退回最小尺寸；摘要可能很长，
+        // 固定它的首选/最小宽度，避免一行提示把整张表单撑宽，超出部分由 JLabel 自行省略。
+        routeSummaryLabel.setText(DEVICES_LOADING_SUMMARY);
+        Dimension compactSummarySize = new Dimension(JBUI.scale(120), routeSummaryLabel.getPreferredSize().height);
+        routeSummaryLabel.setMinimumSize(compactSummarySize);
+        routeSummaryLabel.setPreferredSize(compactSummarySize);
 
         refreshDevicesBtn.setIcon(AllIcons.Actions.Refresh);
-        refreshDevicesBtn.setToolTipText("Refresh devices");
-        addRemoteBtn.setIcon(AllIcons.General.Add);
-        addRemoteBtn.setToolTipText("Add remote host");
+        refreshDevicesBtn.setToolTipText("Refresh devices (starts the ADB server if it is not running)");
         locateRunScriptBtn.setIcon(AllIcons.General.Locate);
         locateRunScriptBtn.setToolTipText("Locate run script in Project View");
         chooseRunScriptBtn.setIcon(AllIcons.Actions.MenuOpen);
@@ -237,26 +261,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     private void bindActions() {
         refreshDevicesBtn.addActionListener(e -> reloadDevicesAsync());
 
-        addRemoteBtn.addActionListener(e -> {
-            ZaFridaSettingsState st = ApplicationManager.getApplication()
-                    .getService(ZaFridaSettingsService.class)
-                    .getState();
-            String defHost = ZaFridaNetUtil.defaultHost(st.defaultRemoteHost);
-            int defPort = ZaFridaNetUtil.defaultPort(st.defaultRemotePort);
-            String initial = String.format("%s:%s", defHost, defPort);
-
-            String host = Messages.showInputDialog(this, "host:port", "Add Frida Remote Host", null, initial, null);
-            if (host == null) {
-                return;
-            }
-            String h = host.trim();
-            if (h.isEmpty()) {
-                return;
-            }
-            ApplicationManager.getApplication().getService(ZaFridaSettingsService.class).addRemoteHost(h);
-            reloadDevicesAsync();
-        });
-
         runBtn.addActionListener(e -> runFrida());
         attachBtn.addActionListener(e -> attachFrida());
         stopBtn.addActionListener(e -> stopRunSession());
@@ -270,7 +274,22 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 return;
             }
             FridaDevice selected = (FridaDevice) deviceCombo.getSelectedItem();
+            explicitDeviceSelections++;
             persistSelectedDevice(selected);
+            updateRouteSummary();
+        });
+
+        connectionModePanel.setListener(new ConnectionModePanel.Listener() {
+            @Override
+            public void onConnectionChanged(@NotNull FridaConnectionMode mode, @NotNull String host, int port) {
+                persistConnection(mode, host, port);
+            }
+
+            @Override
+            public void onInvalidEndpoint(@NotNull String text) {
+                ZaFridaNotifier.warn(project, "ZAFrida",
+                        String.format("Invalid Frida endpoint: %s. Expected host:port.", text));
+            }
         });
 
         fridaProjectSelector.addActionListener(e -> {
@@ -367,8 +386,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         if (active == null) {
             setFridaVersionLabel("—", "No active ZAFrida project");
             // 保留自由脚本模式下的临时输入。
-            targetField.setEnabled(true);
-            targetField.setToolTipText(null);
+            applyConnectionUi(null);
             activeProjectDir = null;
             lastAppliedProject = null;
             pendingProjectAction = null;
@@ -551,6 +569,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
 
     private void openGlobalSettings() {
         ShowSettingsUtil.getInstance().showSettingsDialog(project, "ZAFrida");
+        connectionModePanel.setEndpointPresets(buildEndpointPresets());
     }
 
     public void openNewProjectDialog() {
@@ -694,77 +713,132 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         if (normalized.isEmpty()) {
             return false;
         }
-        int count = deviceCombo.getItemCount();
-        for (int i = 0; i < count; i++) {
-            FridaDevice item = deviceCombo.getItemAt(i);
-            if (normalized.equals(item.getId())) {
-                deviceCombo.setSelectedItem(item);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public boolean selectDeviceByHostForApi(@NotNull String host) {
-        String normalized = host.trim();
-        if (normalized.isEmpty()) {
+        FridaDevice match = findConnectedComboDevice(normalized);
+        if (match == null) {
             return false;
         }
-        int count = deviceCombo.getItemCount();
-        for (int i = 0; i < count; i++) {
-            FridaDevice item = deviceCombo.getItemAt(i);
-            String itemHost = item.getHost();
-            if (itemHost != null && normalized.equals(itemHost)) {
-                deviceCombo.setSelectedItem(item);
-                return true;
-            }
-        }
-        return false;
+        deviceCombo.setSelectedItem(match);
+        return true;
     }
 
     public void selectDeviceForApi(@NotNull FridaDevice device) {
+        FridaDevice selection;
         updatingDeviceCombo = true;
         try {
-            FridaDevice existing = null;
-            int count = deviceCombo.getItemCount();
-            for (int index = 0; index < count; index++) {
-                FridaDevice candidate = deviceCombo.getItemAt(index);
-                if (device.getMode() == FridaDeviceMode.HOST) {
-                    if (Objects.equals(device.getHost(), candidate.getHost())) {
-                        existing = candidate;
-                        break;
-                    }
-                } else if (device.getId().equals(candidate.getId())) {
-                    existing = candidate;
-                    break;
-                }
-            }
-            if (existing == null) {
+            selection = findConnectedComboDevice(device.getId());
+            if (selection == null) {
+                removeNotConnectedPlaceholder(device.getId());
                 deviceCombo.addItem(device);
-                existing = device;
+                selection = device;
             }
-            deviceCombo.setSelectedItem(existing);
+            deviceCombo.setSelectedItem(selection);
         } finally {
             updatingDeviceCombo = false;
         }
-        persistSelectedDevice(device);
+        explicitDeviceSelections++;
+        persistSelectedDevice(selection);
+        updateRouteSummary();
+    }
+
+    /** HTTP API 改写连接配置后同步回填 Mode 行；不重新枚举设备，也不触发回写。 */
+    public void applyConnectionForApi(@Nullable ZaFridaProjectConfig cfg) {
+        applyConnectionUi(cfg);
+    }
+
+    /** 没有活动项目时连接状态只存在于界面上，API 只能直接改界面；有活动项目必须改配置。 */
+    public void setUnsavedConnectionForApi(@NotNull FridaConnectionMode mode, @NotNull String host, int port) {
+        connectionModePanel.setConnection(mode, host, port);
+        applyTargetFieldMode(mode == FridaConnectionMode.GADGET);
+        updateRouteSummary();
+    }
+
+    public @NotNull FridaConnectionPlan getConnectionPlanForApi() {
+        return currentUiPlan();
+    }
+
+    private @Nullable FridaDevice findConnectedComboDevice(@NotNull String deviceId) {
+        int count = deviceCombo.getItemCount();
+        for (int index = 0; index < count; index++) {
+            FridaDevice candidate = deviceCombo.getItemAt(index);
+            if (candidate.isConnected() && deviceId.equals(candidate.getId())) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void removeNotConnectedPlaceholder(@NotNull String deviceId) {
+        int count = deviceCombo.getItemCount();
+        for (int index = 0; index < count; index++) {
+            FridaDevice candidate = deviceCombo.getItemAt(index);
+            if (!candidate.isConnected() && deviceId.equals(candidate.getId())) {
+                deviceCombo.removeItemAt(index);
+                return;
+            }
+        }
     }
 
     private void persistSelectedDevice(@Nullable FridaDevice selected) {
-        if (selected == null) {
+        // 未连接占位本身就来自已保存的 id，无需回写。
+        if (selected == null || !selected.isConnected()) {
             return;
         }
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         if (active == null) {
             return;
         }
+        String deviceId = selected.getId();
+        fridaProjectManager.updateProjectConfigAsync(active, config -> config.lastDeviceId = deviceId);
+    }
+
+    private void persistConnection(@NotNull FridaConnectionMode mode, @NotNull String host, int port) {
+        applyTargetFieldMode(mode == FridaConnectionMode.GADGET);
+        updateRouteSummary();
+        ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
+        if (active == null) {
+            return;
+        }
         fridaProjectManager.updateProjectConfigAsync(active, config -> {
-            if (selected.getMode() == FridaDeviceMode.HOST) {
-                config.lastDeviceHost = selected.getHost();
-            } else {
-                config.lastDeviceId = selected.getId();
-            }
+            config.connectionMode = mode;
+            config.remoteHost = host;
+            config.remotePort = port;
         });
+    }
+
+    /** 只在端点真正用于 Run/Attach 时记入全局候选，避免把输到一半的地址存成候选。 */
+    private void rememberEndpointPreset(@NotNull FridaConnectionPlan plan) {
+        FridaDevice fridaDevice = plan.getFridaDevice();
+        if (plan.getMode() == FridaConnectionMode.USB || fridaDevice == null || fridaDevice.getHost() == null) {
+            return;
+        }
+        String endpoint = fridaDevice.getHost();
+        ZaFridaSettingsService settingsService =
+                ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
+        if (endpoint.equals(defaultEndpoint()) || settingsService.getRemoteHosts().contains(endpoint)) {
+            return;
+        }
+        settingsService.addRemoteHost(endpoint);
+        connectionModePanel.setEndpointPresets(buildEndpointPresets());
+    }
+
+    private @NotNull List<String> buildEndpointPresets() {
+        ZaFridaSettingsService settingsService =
+                ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
+        LinkedHashSet<String> presets = new LinkedHashSet<>();
+        presets.add(defaultEndpoint());
+        for (String host : settingsService.getRemoteHosts()) {
+            if (ZaStrUtil.isNotBlank(host)) {
+                presets.add(host.trim());
+            }
+        }
+        return new ArrayList<>(presets);
+    }
+
+    private static @NotNull String defaultEndpoint() {
+        return ZaFridaNetUtil.formatHostPort(
+                ZaFridaConnectionResolver.defaultHost(),
+                ZaFridaConnectionResolver.defaultPort()
+        );
     }
 
     public @NotNull String getTargetTextForApi() {
@@ -855,10 +929,10 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     private JPanel buildDeviceRow() {
-        deviceCombo.setPrototypeDisplayValue(new FridaDevice(USB_DEVICE_TYPE, USB_DEVICE_TYPE, "Android"));
+        deviceCombo.setPrototypeDisplayValue(new FridaDevice(FridaDevice.TYPE_USB, FridaDevice.TYPE_USB, "Android"));
         Dimension minimumSize = deviceCombo.getMinimumSize();
         deviceCombo.setMinimumSize(new Dimension(JBUI.scale(120), minimumSize.height));
-        return buildFlexibleRow(deviceCombo, buildInlineActions(refreshDevicesBtn, addRemoteBtn));
+        return buildFlexibleRow(deviceCombo, buildInlineActions(refreshDevicesBtn));
     }
 
     private JPanel buildRunScriptRow() {
@@ -951,6 +1025,17 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         c2.fill = GridBagConstraints.HORIZONTAL;
         c2.insets = new Insets(6, 8, 6, 8);
         form.add(right, c2);
+        return row + 1;
+    }
+
+    private int addHintRow(JPanel form, int row, JComponent hint) {
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = 1;
+        constraints.gridy = row;
+        constraints.weightx = 1;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.insets = new Insets(0, 8, 4, 8);
+        form.add(hint, constraints);
         return row + 1;
     }
 
@@ -1120,74 +1205,67 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     private void reloadDevicesAsync() {
+        reloadDevicesAsync(null);
+    }
+
+    private void reloadDevicesAsync(@Nullable Runnable afterReload) {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         if (active == null) {
-            reloadDevicesAsyncWithConfig(null);
+            reloadDevicesAsyncWithConfig(null, afterReload);
             return;
         }
-        fridaProjectManager.loadProjectConfigAsync(active, this::reloadDevicesAsyncWithConfig);
+        fridaProjectManager.loadProjectConfigAsync(active, cfg -> reloadDevicesAsyncWithConfig(cfg, afterReload));
     }
 
     private void reloadDevicesAsyncWithConfig(@Nullable ZaFridaProjectConfig cfg) {
+        reloadDevicesAsyncWithConfig(cfg, null);
+    }
+
+    /**
+     * @param afterReload 枚举结束（无论成败）后在 EDT 执行；本次枚举被更新的一次取代时不会执行。
+     */
+    private void reloadDevicesAsyncWithConfig(@Nullable ZaFridaProjectConfig cfg, @Nullable Runnable afterReload) {
         int generation = ++deviceReloadGeneration;
-        disableControls(true);
+        setDevicesLoading(true);
         runConsolePanel.info("[ZAFrida] Loading devices...");
 
-        FridaConnectionMode connectionMode;
-        if (cfg != null && cfg.connectionMode != null) {
-            connectionMode = cfg.connectionMode;
-        } else {
-            connectionMode = FridaConnectionMode.USB;
+        String savedDeviceId = null;
+        if (cfg != null) {
+            savedDeviceId = cfg.lastDeviceId;
         }
-        final FridaConnectionMode finalConnectionMode = connectionMode;
+        final String finalSavedDeviceId = savedDeviceId;
+        final int selectionsAtStart = explicitDeviceSelections;
+        final boolean usesAdb = ZaFridaConnectionResolver.usesAdb(fridaProjectManager.getActiveProject());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 printToolchainInfoIfChanged(generation);
-                List<FridaDevice> devices = new ArrayList<>(fridaCli.listDevices(project));
-                ZaFridaSettingsService settingsService =
-                        ApplicationManager.getApplication().getService(ZaFridaSettingsService.class);
-                List<String> remotes = settingsService.getRemoteHosts();
-                for (String host : remotes) {
-                    if (!containsHost(devices, host)) {
-                        devices.add(new FridaDevice(String.format("remote:%s", host), "remote", "Remote", FridaDeviceMode.HOST, host));
-                    }
+                // Frida 依赖本机 adb server 枚举 Android 设备，但不会自己拉起它。
+                AdbService.ServerStartResult adbServer = AdbService.ServerStartResult.skipped();
+                if (usesAdb) {
+                    adbServer = adbService.ensureServerStarted();
                 }
-
-                if (cfg != null && (finalConnectionMode == FridaConnectionMode.REMOTE || finalConnectionMode == FridaConnectionMode.GADGET)) {
-                    String host = resolveHostPort(cfg);
-                    if (!containsHost(devices, host)) {
-                        String type;
-                        String name;
-                        if (finalConnectionMode == FridaConnectionMode.GADGET) {
-                            type = "gadget";
-                            name = "Gadget";
-                        } else {
-                            type = "remote";
-                            name = "Remote";
-                        }
-                        devices.add(new FridaDevice(String.format("%s:%s", type, host), type, name, FridaDeviceMode.HOST, host));
-                    }
-                }
-                List<FridaDevice> sortedDevices = sortUsbDevicesFirst(devices);
+                final AdbService.ServerStartResult finalAdbServer = adbServer;
+                List<FridaDevice> devices = sortUsbDevicesFirst(new ArrayList<>(fridaCli.listDevices(project)));
 
                 ApplicationManager.getApplication().invokeLater(() -> {
                     if (disposed || generation != deviceReloadGeneration || project.isDisposed()) {
                         return;
                     }
-                    updatingDeviceCombo = true;
-                    try {
-                        deviceCombo.removeAllItems();
-                        for (FridaDevice d : sortedDevices) {
-                            deviceCombo.addItem(d);
-                        }
-                        selectSavedDevice(sortedDevices, cfg);
-                    } finally {
-                        updatingDeviceCombo = false;
+                    reportAdbServerStart(finalAdbServer);
+                    String deviceIdToRestore = finalSavedDeviceId;
+                    FridaDevice current = (FridaDevice) deviceCombo.getSelectedItem();
+                    if (explicitDeviceSelections != selectionsAtStart && current != null) {
+                        // 枚举期间 API 明确选了设备并已写回配置，不能被枚举开始前读到的旧值覆盖。
+                        deviceIdToRestore = current.getId();
                     }
-                    runConsolePanel.info(String.format("[ZAFrida] Devices loaded: %s", sortedDevices.size()));
-                    applyUsbDeviceHints(sortedDevices, cfg, finalConnectionMode);
-                    disableControls(false);
+                    applyDeviceList(devices, deviceIdToRestore);
+                    runConsolePanel.info(String.format("[ZAFrida] Devices loaded: %s", devices.size()));
+                    warnIfNoUsbDevices(devices, finalAdbServer);
+                    setDevicesLoading(false);
+                    if (afterReload != null) {
+                        afterReload.run();
+                    }
                 });
             } catch (Throwable t) {
                 ApplicationManager.getApplication().invokeLater(() -> {
@@ -1195,57 +1273,163 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                         return;
                     }
                     runConsolePanel.error(String.format("[ZAFrida] Load devices failed: %s", t.getMessage()));
-                    disableControls(false);
+                    setDevicesLoading(false);
+                    if (afterReload != null) {
+                        afterReload.run();
+                    }
                 });
             }
         });
     }
 
-    private void applyConnectionUi(@NotNull ZaFridaProjectConfig cfg) {
-        FridaConnectionMode mode = cfg.connectionMode;
-        if (mode == null) {
-            mode = FridaConnectionMode.USB;
-        }
-        boolean gadgetMode = mode == FridaConnectionMode.GADGET;
-        targetField.setEnabled(!gadgetMode);
-        if (gadgetMode) {
-            targetField.setToolTipText("Gadget mode uses -F; target is ignored.");
-        } else {
-            targetField.setToolTipText("Spawn/Attach uses package name");
-        }
-    }
-
-    private void selectSavedDevice(@NotNull List<FridaDevice> devices, @Nullable ZaFridaProjectConfig cfg) {
-        FridaDevice match = null;
-        if (cfg != null) {
-            if (cfg.connectionMode == FridaConnectionMode.REMOTE || cfg.connectionMode == FridaConnectionMode.GADGET) {
-                String host = resolveHostPort(cfg);
-                match = findDeviceByHost(devices, host);
-            }
-            if (match == null) {
-                if (ZaStrUtil.isNotBlank(cfg.lastDeviceHost)) {
-                    match = findDeviceByHost(devices, cfg.lastDeviceHost);
-                } else if (ZaStrUtil.isNotBlank(cfg.lastDeviceId)) {
-                    match = findDeviceById(devices, cfg.lastDeviceId);
-                }
-            }
-        }
-        if (match != null) {
-            deviceCombo.setSelectedItem(match);
+    private void reportAdbServerStart(@NotNull AdbService.ServerStartResult adbServer) {
+        if (adbServer.getStatus() == AdbService.ServerStartStatus.STARTED) {
+            runConsolePanel.info("[ZAFrida] ADB server was not running; started it automatically.");
             return;
         }
-        if (!devices.isEmpty()) {
-            deviceCombo.setSelectedIndex(0);
+        if (adbServer.getStatus() == AdbService.ServerStartStatus.FAILED) {
+            runConsolePanel.warn(String.format("[ZAFrida] Could not start ADB server: %s", adbServer.getDetail()));
         }
     }
 
-    private static @Nullable FridaDevice findDeviceByHost(@NotNull List<FridaDevice> devices, @NotNull String host) {
-        for (FridaDevice d : devices) {
-            if (host.equals(d.getHost())) {
-                return d;
+    private void applyDeviceList(@NotNull List<FridaDevice> devices, @Nullable String savedDeviceId) {
+        FridaDevice selection = chooseDeviceSelection(devices, savedDeviceId);
+        updatingDeviceCombo = true;
+        try {
+            deviceCombo.removeAllItems();
+            for (FridaDevice device : devices) {
+                deviceCombo.addItem(device);
             }
+            if (selection != null && !selection.isConnected()) {
+                deviceCombo.addItem(selection);
+            }
+            deviceCombo.setSelectedItem(selection);
+        } finally {
+            updatingDeviceCombo = false;
         }
-        return null;
+        if (selection != null && !selection.isConnected()) {
+            notifyMissingDeviceIfBlocking(selection.getId());
+        }
+    }
+
+    /**
+     * 恢复选中的规则：保存的设备在线就选它；不在线且恰好只有一台 USB 设备时临时改用那一台
+     * （不写回配置，原设备重新接入后仍恢复为它）；其余情况返回未连接占位并由执行入口拦截。
+     * 有保存值时绝不静默换成列表第一台，否则 adb 会操作到另一台手机。
+     */
+    private @Nullable FridaDevice chooseDeviceSelection(@NotNull List<FridaDevice> devices,
+                                                        @Nullable String savedDeviceId) {
+        if (ZaStrUtil.isBlank(savedDeviceId) || FridaDevice.GENERIC_USB_ID.equalsIgnoreCase(savedDeviceId.trim())) {
+            lastMissingDeviceId = null;
+            announcedDeviceSubstitution = null;
+            if (devices.isEmpty()) {
+                return null;
+            }
+            return devices.get(0);
+        }
+
+        String savedId = savedDeviceId.trim();
+        FridaDevice saved = findDeviceById(devices, savedId);
+        if (saved != null) {
+            lastMissingDeviceId = null;
+            announcedDeviceSubstitution = null;
+            notifiedMissingDeviceIds.remove(savedId);
+            return saved;
+        }
+
+        FridaDevice onlyUsbDevice = findOnlyUsbDevice(devices);
+        if (onlyUsbDevice != null) {
+            announceDeviceSubstitution(savedId, onlyUsbDevice);
+            return onlyUsbDevice;
+        }
+
+        logMissingDevice(savedId);
+        return FridaDevice.notConnected(savedId);
+    }
+
+    private void announceDeviceSubstitution(@NotNull String savedId, @NotNull FridaDevice substitute) {
+        lastMissingDeviceId = null;
+        String key = String.format("%s>%s", savedId, substitute.getId());
+        if (key.equals(announcedDeviceSubstitution)) {
+            return;
+        }
+        announcedDeviceSubstitution = key;
+        runConsolePanel.warn(String.format(
+                "[ZAFrida] Saved device %s is not connected; using the only USB device %s (%s) for now.",
+                savedId, substitute.getName(), substitute.getId()));
+    }
+
+    private void logMissingDevice(@NotNull String savedId) {
+        announcedDeviceSubstitution = null;
+        if (savedId.equals(lastMissingDeviceId)) {
+            return;
+        }
+        lastMissingDeviceId = savedId;
+        runConsolePanel.warn(String.format(
+                "[ZAFrida] Saved device %s is not connected. Connect it or select another device.", savedId));
+    }
+
+    /**
+     * 只有缺失的设备确实挡住当前路由时才弹通知；纯 Remote 或 iOS 项目里设备不参与连接，只在 Console 提示。
+     * 每个设备 id 只弹一次，直到它重新上线，避免在几个项目之间切换时反复弹出。
+     */
+    private void notifyMissingDeviceIfBlocking(@NotNull String savedId) {
+        if (currentUiPlan().getSessionBlocker() == null || !notifiedMissingDeviceIds.add(savedId)) {
+            return;
+        }
+        ZaFridaNotifier.warn(project, "ZAFrida", String.format(
+                "Saved device %s is not connected. Connect it or select another device.", savedId));
+    }
+
+    private void applyConnectionUi(@Nullable ZaFridaProjectConfig cfg) {
+        FridaConnectionMode mode = ZaFridaConnectionResolver.resolveMode(cfg);
+        connectionModePanel.setConnection(
+                mode,
+                ZaFridaConnectionResolver.resolveHost(cfg),
+                ZaFridaConnectionResolver.resolvePort(cfg)
+        );
+        connectionModePanel.setEndpointPresets(buildEndpointPresets());
+        applyTargetFieldMode(mode == FridaConnectionMode.GADGET);
+        updateRouteSummary();
+    }
+
+    private void applyTargetFieldMode(boolean gadgetMode) {
+        // Gadget 模式不读取 Target，但包名仍要能选中复制，所以用只读而不是禁用。
+        targetField.setEditable(!gadgetMode);
+        if (gadgetMode) {
+            targetField.setToolTipText(GADGET_TARGET_TOOLTIP);
+        } else {
+            targetField.setToolTipText(TARGET_TOOLTIP);
+        }
+    }
+
+    /** 由界面当前状态得到的连接方案；Mode 行与项目配置保持同步，设备以下拉框选中项为准。 */
+    private @NotNull FridaConnectionPlan currentUiPlan() {
+        return FridaConnectionPlan.resolve(
+                connectionModePanel.getMode(),
+                connectionModePanel.getHost(),
+                connectionModePanel.getPort(),
+                (FridaDevice) deviceCombo.getSelectedItem(),
+                ZaFridaConnectionResolver.usesAdb(fridaProjectManager.getActiveProject())
+        );
+    }
+
+    private void updateRouteSummary() {
+        if (devicesLoading) {
+            routeSummaryLabel.setText(DEVICES_LOADING_SUMMARY);
+            routeSummaryLabel.setToolTipText(null);
+            routeSummaryLabel.setForeground(UIUtil.getContextHelpForeground());
+            return;
+        }
+        FridaConnectionPlan plan = currentUiPlan();
+        String summary = plan.getSummary();
+        routeSummaryLabel.setText(summary);
+        routeSummaryLabel.setToolTipText(summary);
+        if (plan.getSessionBlocker() != null) {
+            routeSummaryLabel.setForeground(JBColor.RED);
+        } else {
+            routeSummaryLabel.setForeground(UIUtil.getContextHelpForeground());
+        }
     }
 
     private static @Nullable FridaDevice findDeviceById(@NotNull List<FridaDevice> devices, @NotNull String id) {
@@ -1257,10 +1441,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return null;
     }
 
-    private static boolean containsHost(@NotNull List<FridaDevice> devices, @NotNull String host) {
-        return findDeviceByHost(devices, host) != null;
-    }
-
     private static @NotNull List<FridaDevice> sortUsbDevicesFirst(@NotNull List<FridaDevice> devices) {
         if (devices.isEmpty()) {
             return devices;
@@ -1268,7 +1448,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         List<FridaDevice> usbDevices = new ArrayList<>();
         List<FridaDevice> others = new ArrayList<>();
         for (FridaDevice device : devices) {
-            if (isUsbDevice(device)) {
+            if (device.isUsb()) {
                 usbDevices.add(device);
             } else {
                 others.add(device);
@@ -1283,83 +1463,70 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return sorted;
     }
 
-    private void applyUsbDeviceHints(@NotNull List<FridaDevice> devices,
-                                     @Nullable ZaFridaProjectConfig cfg,
-                                     @NotNull FridaConnectionMode connectionMode) {
-        boolean hasUsb = hasUsbDevice(devices);
-        if (hasUsb) {
+    private void warnIfNoUsbDevices(@NotNull List<FridaDevice> devices,
+                                    @NotNull AdbService.ServerStartResult adbServer) {
+        if (findFirstUsbDevice(devices) != null) {
             warnedNoUsbDevices = false;
-        } else {
-            if (!warnedNoUsbDevices) {
-                runConsolePanel.warn(String.format(
-                        "[ZAFrida] No USB devices found. If you're using USB mode, run \"%s\" in a terminal to initialize the ADB connection.",
-                        ADB_SHELL_COMMAND));
-                warnedNoUsbDevices = true;
-            }
-        }
-
-        if (cfg == null) {
-            lastMissingUsbDeviceId = null;
             return;
         }
-        if (connectionMode != FridaConnectionMode.USB) {
-            lastMissingUsbDeviceId = null;
+        if (warnedNoUsbDevices) {
             return;
         }
-        if (ZaStrUtil.isBlank(cfg.lastDeviceId)) {
-            lastMissingUsbDeviceId = null;
+        warnedNoUsbDevices = true;
+        if (adbServer.getStatus() == AdbService.ServerStartStatus.UNAVAILABLE) {
+            runConsolePanel.warn("[ZAFrida] No USB devices found. adb is not available, so the ADB server could not be started automatically; Android devices need adb in PATH.");
             return;
         }
-        if (findDeviceById(devices, cfg.lastDeviceId) != null) {
-            lastMissingUsbDeviceId = null;
-            return;
-        }
-        if (!cfg.lastDeviceId.equals(lastMissingUsbDeviceId)) {
-            ZaFridaNotifier.warn(project, "ZAFrida",
-                    String.format("Saved USB device not found: %s. Please refresh or switch device.", cfg.lastDeviceId));
-            lastMissingUsbDeviceId = cfg.lastDeviceId;
-        }
+        runConsolePanel.warn("[ZAFrida] No USB devices found. Check the USB cable and that the device trusts this computer (Android: USB debugging authorization).");
     }
 
-    private static boolean hasUsbDevice(@NotNull List<FridaDevice> devices) {
+    private static @Nullable FridaDevice findFirstUsbDevice(@NotNull List<FridaDevice> devices) {
         for (FridaDevice device : devices) {
-            if (isUsbDevice(device)) {
-                return true;
+            if (device.isUsb()) {
+                return device;
             }
         }
-        return false;
+        return null;
     }
 
-    private static boolean isUsbDevice(@NotNull FridaDevice device) {
-        return USB_DEVICE_TYPE.equalsIgnoreCase(device.getType());
-    }
-
-    private @NotNull String resolveHostPort(@Nullable ZaFridaProjectConfig cfg) {
-        return String.format("%s:%s", resolveRemoteHost(cfg), resolveRemotePort(cfg));
-    }
-
-    private @NotNull String resolveRemoteHost(@Nullable ZaFridaProjectConfig cfg) {
-        if (cfg != null && ZaStrUtil.isNotBlank(cfg.remoteHost)) {
-            return cfg.remoteHost.trim();
+    /** 恰好只有一台 USB 设备时返回它，0 台或多台返回 null。 */
+    private static @Nullable FridaDevice findOnlyUsbDevice(@NotNull List<FridaDevice> devices) {
+        FridaDevice only = null;
+        for (FridaDevice device : devices) {
+            if (!device.isUsb()) {
+                continue;
+            }
+            if (only != null) {
+                return null;
+            }
+            only = device;
         }
-        ZaFridaSettingsState st = ApplicationManager.getApplication()
-                .getService(ZaFridaSettingsService.class)
-                .getState();
-        return ZaFridaNetUtil.defaultHost(st.defaultRemoteHost);
-    }
-
-    private int resolveRemotePort(@Nullable ZaFridaProjectConfig cfg) {
-        if (cfg != null && cfg.remotePort > 0) {
-            return cfg.remotePort;
-        }
-        ZaFridaSettingsState st = ApplicationManager.getApplication()
-                .getService(ZaFridaSettingsService.class)
-                .getState();
-        return ZaFridaNetUtil.defaultPort(st.defaultRemotePort);
+        return only;
     }
 
 
     private void runFrida() {
+        withFreshDeviceSelection(this::runFridaWithCurrentInputs);
+    }
+
+    private void attachFrida() {
+        withFreshDeviceSelection(this::attachFridaWithCurrentInputs);
+    }
+
+    /**
+     * 选中的是未连接占位时先重新枚举一次再继续：用户很可能刚插上手机还没点刷新。
+     * 重新枚举后仍不在线，则由后续的连接方案拦截并提示。
+     */
+    private void withFreshDeviceSelection(@NotNull Runnable action) {
+        FridaDevice selected = (FridaDevice) deviceCombo.getSelectedItem();
+        if (selected == null || selected.isConnected() || devicesLoading) {
+            action.run();
+            return;
+        }
+        reloadDevicesAsync(action);
+    }
+
+    private void runFridaWithCurrentInputs() {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         String targetText = targetField.getText();
         String target;
@@ -1389,7 +1556,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 runFridaWithConfig(active, cfg, target, extraArgs, finalPreferredScript));
     }
 
-    private void attachFrida() {
+    private void attachFridaWithCurrentInputs() {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
         String targetText = targetField.getText();
         String target;
@@ -1421,19 +1588,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                                     @NotNull String target,
                                     @NotNull String extraArgs,
                                     @Nullable VirtualFile preferredScript) {
-        FridaConnectionMode connectionMode;
-        if (projectConfig != null && projectConfig.connectionMode != null) {
-            connectionMode = projectConfig.connectionMode;
-        } else {
-            connectionMode = FridaConnectionMode.USB;
-        }
-        final FridaConnectionMode finalConnectionMode = connectionMode;
-        final boolean gadgetMode = connectionMode == FridaConnectionMode.GADGET;
-
-        FridaDevice dev = resolveDevice(projectConfig, connectionMode, gadgetMode);
-        if (dev == null) {
+        FridaConnectionPlan plan = resolveSessionPlan(active, projectConfig, runConsolePanel);
+        if (plan == null) {
             return;
         }
+        final boolean gadgetMode = plan.isGadget();
 
         if (!gadgetMode && target.isEmpty()) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Target is empty");
@@ -1457,45 +1616,7 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             if (gadgetMode) {
                 mode = new FrontmostRunMode();
             }
-
-            FridaRunConfig cfg = new FridaRunConfig(
-                    dev,
-                    mode,
-                    script.getPath(),
-                    extraArgs
-            );
-
-            String fridaProjectDir = null;
-            if (activeProjectDir != null && activeProjectDir.isValid()) {
-                fridaProjectDir = activeProjectDir.getPath();
-            }
-
-            String targetPackage = null;
-            if (!gadgetMode && !target.isEmpty()) {
-                targetPackage = target;
-            }
-
-            ZaFridaConsolePanel console = runConsolePanel;
-            consoleTabsPanel.showRunConsole();
-            warnIfTypeScriptNeedsFrida17(script, console);
-            String finalFridaProjectDir = fridaProjectDir;
-            String finalTargetPackage = targetPackage;
-            Runnable startSession = () ->
-                    startFridaSession(ZaFridaSessionType.RUN, cfg, console, finalFridaProjectDir, finalTargetPackage);
-            boolean needsAdbForward = (finalConnectionMode == FridaConnectionMode.REMOTE || gadgetMode)
-                    && ZaFridaNetUtil.isLoopbackHost(resolveRemoteHost(projectConfig));
-            if (needsAdbForward) {
-                adbService.forwardTcp(
-                        resolveRemotePort(projectConfig),
-                        resolveAdbDeviceId(projectConfig),
-                        console::info,
-                        console::warn,
-                        startSession
-                );
-                return;
-            }
-
-            startSession.run();
+            launchSession(ZaFridaSessionType.RUN, plan, mode, script, extraArgs, target);
         });
     }
 
@@ -1504,19 +1625,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                                        @NotNull String target,
                                        @NotNull String extraArgs,
                                        @Nullable VirtualFile preferredScript) {
-        FridaConnectionMode connectionMode;
-        if (projectConfig != null && projectConfig.connectionMode != null) {
-            connectionMode = projectConfig.connectionMode;
-        } else {
-            connectionMode = FridaConnectionMode.USB;
-        }
-        final FridaConnectionMode finalConnectionMode = connectionMode;
-        final boolean gadgetMode = connectionMode == FridaConnectionMode.GADGET;
-
-        FridaDevice dev = resolveDevice(projectConfig, connectionMode, gadgetMode);
-        if (dev == null) {
+        FridaConnectionPlan plan = resolveSessionPlan(active, projectConfig, attachConsolePanel);
+        if (plan == null) {
             return;
         }
+        final boolean gadgetMode = plan.isGadget();
 
         if (!gadgetMode && target.isEmpty()) {
             ZaFridaNotifier.warn(project, "ZAFrida", "Target is empty");
@@ -1544,43 +1657,85 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
                 ZaFridaNotifier.warn(project, "ZAFrida", e.getMessage());
                 return;
             }
+            launchSession(ZaFridaSessionType.ATTACH, plan, mode, script, extraArgs, target);
+        });
+    }
 
-            FridaRunConfig cfg = new FridaRunConfig(
-                    dev,
-                    mode,
-                    script.getPath(),
-                    extraArgs
-            );
+    /**
+     * 有活动项目时以项目配置为准（API 可能刚改写过配置，界面回填是异步的）；
+     * 自由脚本模式没有配置，连接状态只存在于界面上。设备始终取界面当前选中项。
+     */
+    private @NotNull FridaConnectionPlan resolvePlan(@Nullable ZaFridaFridaProject active,
+                                                     @Nullable ZaFridaProjectConfig projectConfig) {
+        if (active == null) {
+            return currentUiPlan();
+        }
+        FridaDevice selected = (FridaDevice) deviceCombo.getSelectedItem();
+        return ZaFridaConnectionResolver.resolve(active, projectConfig, selected);
+    }
 
-            String fridaProjectDir = null;
-            if (activeProjectDir != null && activeProjectDir.isValid()) {
-                fridaProjectDir = activeProjectDir.getPath();
-            }
+    /** 被设备状态拦截时已提示用户并返回 null。 */
+    private @Nullable FridaConnectionPlan resolveSessionPlan(@Nullable ZaFridaFridaProject active,
+                                                             @Nullable ZaFridaProjectConfig projectConfig,
+                                                             @NotNull ZaFridaConsolePanel console) {
+        FridaConnectionPlan plan = resolvePlan(active, projectConfig);
+        String blocker = plan.getSessionBlocker();
+        if (blocker != null) {
+            console.warn(String.format("[ZAFrida] %s", blocker));
+            ZaFridaNotifier.warn(project, "ZAFrida", blocker);
+            return null;
+        }
+        return plan;
+    }
 
-            ZaFridaConsolePanel console = attachConsolePanel;
+    private void launchSession(@NotNull ZaFridaSessionType type,
+                               @NotNull FridaConnectionPlan plan,
+                               @NotNull FridaRunMode mode,
+                               @NotNull VirtualFile script,
+                               @NotNull String extraArgs,
+                               @NotNull String target) {
+        ZaFridaConsolePanel console = resolveConsoleForSessionType(type);
+        FridaDevice fridaDevice = plan.getFridaDevice();
+        if (fridaDevice == null) {
+            console.error("[ZAFrida] No Frida device resolved for this session.");
+            return;
+        }
+        FridaRunConfig cfg = new FridaRunConfig(fridaDevice, mode, script.getPath(), extraArgs);
+        rememberEndpointPreset(plan);
+
+        String fridaProjectDir = null;
+        if (activeProjectDir != null && activeProjectDir.isValid()) {
+            fridaProjectDir = activeProjectDir.getPath();
+        }
+        String targetPackage = null;
+        if (!plan.isGadget() && !target.isEmpty()) {
+            targetPackage = target;
+        }
+
+        if (type == ZaFridaSessionType.ATTACH) {
             consoleTabsPanel.showAttachConsole();
-            warnIfTypeScriptNeedsFrida17(script, console);
-            String targetPackage = null;
-            if (!gadgetMode && !target.isEmpty()) {
-                targetPackage = target;
-            }
-            String finalFridaProjectDir = fridaProjectDir;
-            String finalTargetPackage = targetPackage;
-            Runnable startSession = () ->
-                    startFridaSession(ZaFridaSessionType.ATTACH, cfg, console, finalFridaProjectDir, finalTargetPackage);
-            boolean needsAdbForward = (finalConnectionMode == FridaConnectionMode.REMOTE || gadgetMode)
-                    && ZaFridaNetUtil.isLoopbackHost(resolveRemoteHost(projectConfig));
-            if (needsAdbForward) {
-                adbService.forwardTcp(
-                        resolveRemotePort(projectConfig),
-                        resolveAdbDeviceId(projectConfig),
-                        console::info,
-                        console::warn,
-                        startSession
-                );
-                return;
-            }
+        } else {
+            consoleTabsPanel.showRunConsole();
+        }
+        warnIfTypeScriptNeedsFrida17(script, console);
 
+        String finalFridaProjectDir = fridaProjectDir;
+        String finalTargetPackage = targetPackage;
+        Runnable startSession = () ->
+                startFridaSession(type, cfg, console, finalFridaProjectDir, finalTargetPackage);
+        if (!plan.isAdbForwardRequired()) {
+            startSession.run();
+            return;
+        }
+
+        int forwardPort = plan.getForwardPort();
+        adbService.forwardTcp(forwardPort, plan.getAdbSerial(), console::info, console::warn, success -> {
+            // 转发失败只提醒不中止：用户可能自建了隧道，或该端口上已有可用的转发。
+            if (!success) {
+                ZaFridaNotifier.warn(project, "ZAFrida", String.format(
+                        "ADB forward tcp:%s failed. Starting Frida anyway; see the console for details.",
+                        forwardPort));
+            }
             startSession.run();
         });
     }
@@ -1625,31 +1780,8 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         });
     }
 
-    private @Nullable FridaDevice resolveDevice(@Nullable ZaFridaProjectConfig projectConfig,
-                                                @NotNull FridaConnectionMode connectionMode,
-                                                boolean gadgetMode) {
-        if (connectionMode == FridaConnectionMode.REMOTE || gadgetMode) {
-            String hostValue = resolveRemoteHost(projectConfig);
-            int portValue = resolveRemotePort(projectConfig);
-            String host = String.format("%s:%s", hostValue, portValue);
-            String type = "remote";
-            String name = "Remote";
-            if (gadgetMode) {
-                type = "gadget";
-                name = "Gadget";
-            }
-            return new FridaDevice(String.format("%s:%s", type, host), type, name, FridaDeviceMode.HOST, host);
-        }
-        FridaDevice dev = (FridaDevice) deviceCombo.getSelectedItem();
-        if (dev == null) {
-            ZaFridaNotifier.warn(project, "ZAFrida", "No device selected");
-            return null;
-        }
-        return dev;
-    }
-
     private @Nullable FridaDevice getSelectedDeviceForDiagnostics() {
-        return (FridaDevice) deviceCombo.getSelectedItem();
+        return currentUiPlan().getFridaDevice();
     }
 
     private void startFridaSession(@NotNull ZaFridaSessionType type,
@@ -1723,85 +1855,54 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
     }
 
     private void forceStopApp() {
-        ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
-        String targetRaw = targetField.getText();
-        String targetText;
-        if (targetRaw == null) {
-            targetText = "";
-        } else {
-            targetText = targetRaw.trim();
-        }
-        if (active == null) {
-            forceStopWithConfig(null, targetText);
-            return;
-        }
-        fridaProjectManager.loadProjectConfigAsync(active, cfg -> forceStopWithConfig(cfg, targetText));
+        withFreshDeviceSelection(() -> runAdbAppAction("Force stop", (packageName, adbSerial) ->
+                adbService.forceStop(packageName, adbSerial, runConsolePanel::info, runConsolePanel::error)));
     }
 
     private void openApp() {
+        withFreshDeviceSelection(() -> runAdbAppAction("Open app", (packageName, adbSerial) ->
+                adbService.openApp(packageName, adbSerial, runConsolePanel::info, runConsolePanel::error)));
+    }
+
+    /** action 的第二个参数是 adb serial，为空表示不带 {@code -s}。 */
+    private void runAdbAppAction(@NotNull String actionName, @NotNull BiConsumer<String, String> action) {
         ZaFridaFridaProject active = fridaProjectManager.getActiveProject();
-        String targetRaw = targetField.getText();
-        String targetText;
-        if (targetRaw == null) {
-            targetText = "";
-        } else {
-            targetText = targetRaw.trim();
-        }
+        String targetText = getTargetTextForApi();
         if (active == null) {
-            openAppWithConfig(null, targetText);
+            runAdbAppActionWithConfig(actionName, null, null, targetText, action);
             return;
         }
-        fridaProjectManager.loadProjectConfigAsync(active, cfg -> openAppWithConfig(cfg, targetText));
+        fridaProjectManager.loadProjectConfigAsync(active, cfg ->
+                runAdbAppActionWithConfig(actionName, active, cfg, targetText, action));
     }
 
-    private void forceStopWithConfig(@Nullable ZaFridaProjectConfig projectConfig, @NotNull String targetText) {
-        String packageName = resolveForceStopPackage(projectConfig, targetText);
+    private void runAdbAppActionWithConfig(@NotNull String actionName,
+                                           @Nullable ZaFridaFridaProject active,
+                                           @Nullable ZaFridaProjectConfig projectConfig,
+                                           @NotNull String targetText,
+                                           @NotNull BiConsumer<String, String> action) {
+        String packageName = resolveAdbPackage(projectConfig, targetText);
         if (ZaStrUtil.isBlank(packageName)) {
-            ZaFridaNotifier.warn(project, "ZAFrida", "Force stop requires a package name");
-            runConsolePanel.warn("[ZAFrida] Force stop requires a package name.");
+            String message = String.format("%s requires a package name", actionName);
+            ZaFridaNotifier.warn(project, "ZAFrida", message);
+            runConsolePanel.warn(String.format("[ZAFrida] %s.", message));
             return;
         }
 
-        FridaDevice selected = (FridaDevice) deviceCombo.getSelectedItem();
-        String deviceId = null;
-        if (selected != null && selected.getMode() == FridaDeviceMode.DEVICE_ID) {
-            String id = selected.getId();
-            if (ZaStrUtil.isNotBlank(id) && !"usb".equalsIgnoreCase(id)) {
-                deviceId = id;
-            }
-        }
-        adbService.forceStop(packageName, deviceId, runConsolePanel::info, runConsolePanel::error);
-    }
-
-    private void openAppWithConfig(@Nullable ZaFridaProjectConfig projectConfig, @NotNull String targetText) {
-        String packageName = resolveForceStopPackage(projectConfig, targetText);
-        if (ZaStrUtil.isBlank(packageName)) {
-            ZaFridaNotifier.warn(project, "ZAFrida", "Open app requires a package name");
-            runConsolePanel.warn("[ZAFrida] Open app requires a package name.");
+        FridaConnectionPlan plan = resolvePlan(active, projectConfig);
+        String blocker = plan.getAdbBlocker();
+        if (blocker != null) {
+            ZaFridaNotifier.warn(project, "ZAFrida", blocker);
+            runConsolePanel.warn(String.format("[ZAFrida] %s", blocker));
             return;
         }
-
-        FridaDevice selected = (FridaDevice) deviceCombo.getSelectedItem();
-        String deviceId = null;
-        if (selected != null && selected.getMode() == FridaDeviceMode.DEVICE_ID) {
-            String id = selected.getId();
-            if (ZaStrUtil.isNotBlank(id) && !"usb".equalsIgnoreCase(id)) {
-                deviceId = id;
-            }
-        }
-        adbService.openApp(packageName, deviceId, runConsolePanel::info, runConsolePanel::error);
+        action.accept(packageName, plan.getAdbSerial());
     }
 
-    private @Nullable String resolveForceStopPackage(@Nullable ZaFridaProjectConfig cfg, @NotNull String targetText) {
-        boolean gadgetMode = cfg != null && cfg.connectionMode == FridaConnectionMode.GADGET;
-        String target = targetText;
-        if (gadgetMode) {
-            target = "";
-        }
-        if (!target.isEmpty()) {
-            if (!ZaFridaTextUtil.isNumeric(target)) {
-                return target;
-            }
+    /** 以界面上可见的 Target 为准（Gadget 模式下它只读显示项目保存的包名），纯数字 PID 回退到项目配置。 */
+    private @Nullable String resolveAdbPackage(@Nullable ZaFridaProjectConfig cfg, @NotNull String targetText) {
+        if (!targetText.isEmpty() && !ZaFridaTextUtil.isNumeric(targetText)) {
+            return targetText;
         }
         if (cfg != null && ZaStrUtil.isNotBlank(cfg.lastTarget)) {
             return cfg.lastTarget.trim();
@@ -1821,17 +1922,6 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
             }
         }
         return new AttachNameRunMode(target);
-    }
-
-    private @Nullable String resolveAdbDeviceId(@Nullable ZaFridaProjectConfig config) {
-        if (config == null || ZaStrUtil.isBlank(config.lastDeviceId)) {
-            return null;
-        }
-        String deviceId = config.lastDeviceId.trim();
-        if ("usb".equalsIgnoreCase(deviceId)) {
-            return null;
-        }
-        return deviceId;
     }
 
     private void updateRunningState() {
@@ -1854,10 +1944,11 @@ public final class ZaFridaRunPanel extends JPanel implements Disposable {
         return runConsolePanel;
     }
 
-    private void disableControls(boolean disabled) {
-        deviceCombo.setEnabled(!disabled);
-        refreshDevicesBtn.setEnabled(!disabled);
-        addRemoteBtn.setEnabled(!disabled);
+    private void setDevicesLoading(boolean loading) {
+        devicesLoading = loading;
+        deviceCombo.setEnabled(!loading);
+        refreshDevicesBtn.setEnabled(!loading);
+        updateRouteSummary();
     }
 
     private static final class PendingProjectAction {

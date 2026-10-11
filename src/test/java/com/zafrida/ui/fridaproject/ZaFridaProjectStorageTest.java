@@ -1,8 +1,10 @@
 package com.zafrida.ui.fridaproject;
 
+import com.zafrida.ui.frida.FridaConnectionMode;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -43,6 +45,45 @@ class ZaFridaProjectStorageTest {
 
         assertEquals(ZaFridaPlatform.ANDROID, config.platform);
         assertEquals("", config.pythonEnvironmentPath);
+    }
+
+    @Test
+    void legacyDeviceHostStillInRemoteHostsMigratesToRemoteAndKeepsDevice() throws Exception {
+        ZaFridaProjectStorage withKnownHost = new ZaFridaProjectStorage("192.168.1.20:27042"::equals);
+        String xml = "<zafridaProject name=\"legacy\" platform=\"ANDROID\" connectionMode=\"USB\" "
+                + "lastDeviceHost=\"192.168.1.20:27042\" lastDeviceId=\"1A2B3C4D\"/>";
+
+        ZaFridaProjectConfig migrated = withKnownHost.parseProject(xml);
+
+        assertEquals(FridaConnectionMode.REMOTE, migrated.connectionMode);
+        assertEquals("192.168.1.20", migrated.remoteHost);
+        assertEquals(27042, migrated.remotePort);
+        assertEquals("1A2B3C4D", migrated.lastDeviceId);
+    }
+
+    @Test
+    void legacyDeviceHostNoLongerInRemoteHostsLeavesUsbProjectAlone() throws Exception {
+        ZaFridaProjectStorage withoutKnownHost = new ZaFridaProjectStorage(host -> false);
+        String xml = "<zafridaProject name=\"legacy\" platform=\"ANDROID\" connectionMode=\"USB\" "
+                + "remoteHost=\"127.0.0.1\" remotePort=\"14725\" lastDeviceHost=\"192.168.1.20:27042\"/>";
+
+        ZaFridaProjectConfig untouched = withoutKnownHost.parseProject(xml);
+
+        assertEquals(FridaConnectionMode.USB, untouched.connectionMode);
+        assertEquals("127.0.0.1", untouched.remoteHost);
+        assertEquals(14725, untouched.remotePort);
+    }
+
+    @Test
+    void legacyDeviceHostIsNeverWrittenBack() throws Exception {
+        String legacy = "<zafridaProject name=\"legacy\" platform=\"ANDROID\" connectionMode=\"GADGET\" "
+                + "lastDeviceHost=\"127.0.0.1:14725\" lastDeviceId=\"1A2B3C4D\"/>";
+
+        String xml = storage.toProjectXml(storage.parseProject(legacy));
+
+        assertFalse(xml.contains("lastDeviceHost"));
+        assertTrue(xml.contains("connectionMode=\"GADGET\""));
+        assertTrue(xml.contains("lastDeviceId=\"1A2B3C4D\""));
     }
 
     @Test

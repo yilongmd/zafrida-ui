@@ -45,7 +45,7 @@ public final class ZaFridaMainToolWindow extends JPanel implements Disposable {
         this.consoleTabsPanel = new ZaFridaConsoleTabsPanel(project);
         this.templatePanel = new ZaFridaTemplatePanel(project, consoleTabsPanel.getRunConsolePanel());
         this.runPanel = new ZaFridaRunPanel(project, consoleTabsPanel, templatePanel);
-        this.toolsPanel = new ZaFridaToolsPanel(project, consoleTabsPanel);
+        this.toolsPanel = new ZaFridaToolsPanel(project, consoleTabsPanel, runPanel::getSelectedDeviceForApi);
 
         Disposer.register(this, consoleTabsPanel);
         Disposer.register(this, templatePanel);

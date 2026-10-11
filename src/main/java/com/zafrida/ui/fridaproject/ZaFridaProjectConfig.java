@@ -18,8 +18,8 @@ public final class ZaFridaProjectConfig {
     public @NotNull FridaConnectionMode connectionMode = FridaConnectionMode.USB;
     public @NotNull String remoteHost = "127.0.0.1";
     public int remotePort = 14725;
+    /** 用户选中的真实设备 id，只用于刷新后恢复界面选中；执行时以界面当前选中且在线的设备为准。 */
     public @Nullable String lastDeviceId = null;
-    public @Nullable String lastDeviceHost = null;
     public boolean targetManual = true;
     public @NotNull FridaProcessScope processScope = FridaProcessScope.RUNNING_APPS;
 

@@ -427,20 +427,7 @@ public final class FridaCliService {
     }
 
     private void addDeviceArgs(@NotNull GeneralCommandLine cmd, @NotNull FridaDevice device) {
-        if (device.getMode() == FridaDeviceMode.HOST) {
-            String host = device.getHost();
-            if (ZaStrUtil.isBlank(host)) {
-                throw new IllegalArgumentException("Device host is null/blank");
-            }
-            cmd.addParameters("-H", host);
-            return;
-        }
-        String id = device.getId();
-        if ("usb".equalsIgnoreCase(id)) {
-            cmd.addParameter("-U");
-        } else {
-            cmd.addParameters("-D", id);
-        }
+        cmd.addParameters(device.cliArgs());
     }
 
     private CapturedOut runCapturing(@NotNull GeneralCommandLine cmd, int timeoutMs) {

@@ -10,6 +10,9 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.zafrida.ui.adb.AdbTraceLogSyncService;
+import com.zafrida.ui.frida.FridaConnectionPlan;
+import com.zafrida.ui.frida.FridaDevice;
+import com.zafrida.ui.fridaproject.ZaFridaConnectionResolver;
 import com.zafrida.ui.fridaproject.ZaFridaFridaProject;
 import com.zafrida.ui.fridaproject.ZaFridaPlatform;
 import com.zafrida.ui.fridaproject.ZaFridaProjectConfig;
@@ -39,6 +42,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.function.Supplier;
 
 public final class ZaFridaToolsPanel extends JPanel implements Disposable {
 
@@ -48,6 +52,7 @@ public final class ZaFridaToolsPanel extends JPanel implements Disposable {
     private final @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel;
     private final @NotNull ZaFridaConsolePanel runConsolePanel;
     private final @NotNull ZaFridaProjectManager fridaProjectManager;
+    private final @NotNull Supplier<FridaDevice> selectedDeviceSupplier;
 
     private final JLabel platformIconLabel = new JLabel();
     private final JLabel platformTextLabel = new JLabel("-", SwingConstants.LEFT);
@@ -60,10 +65,16 @@ public final class ZaFridaToolsPanel extends JPanel implements Disposable {
 
     private @Nullable Path lastTraceLocalFile;
 
-    public ZaFridaToolsPanel(@NotNull Project project, @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel) {
+    /**
+     * @param selectedDeviceSupplier Session 面板当前选中的真实设备，adb 操作必须以它为准
+     */
+    public ZaFridaToolsPanel(@NotNull Project project,
+                             @NotNull ZaFridaConsoleTabsPanel consoleTabsPanel,
+                             @NotNull Supplier<FridaDevice> selectedDeviceSupplier) {
         super(new BorderLayout());
         this.project = project;
         this.consoleTabsPanel = consoleTabsPanel;
+        this.selectedDeviceSupplier = selectedDeviceSupplier;
         this.runConsolePanel = consoleTabsPanel.getRunConsolePanel();
         this.fridaProjectManager = project.getService(ZaFridaProjectManager.class);
 
@@ -203,7 +214,15 @@ public final class ZaFridaToolsPanel extends JPanel implements Disposable {
                 return;
             }
 
-            String deviceId = normalizeAdbDeviceId(cfg.lastDeviceId);
+            FridaConnectionPlan plan = ZaFridaConnectionResolver.resolve(active, cfg, selectedDeviceSupplier.get());
+            String deviceBlocker = plan.getAdbBlocker();
+            if (deviceBlocker != null) {
+                pullTraceLogsBtn.setEnabled(true);
+                ZaFridaNotifier.warn(project, "ZAFrida", deviceBlocker);
+                runConsolePanel.warn(String.format("[ZAFrida] %s", deviceBlocker));
+                return;
+            }
+            String deviceId = plan.getAdbSerial();
             String fridaProjectDir = resolveActiveFridaProjectDir(active);
 
             AdbTraceLogSyncService svc = ApplicationManager.getApplication().getService(AdbTraceLogSyncService.class);
@@ -356,20 +375,6 @@ public final class ZaFridaToolsPanel extends JPanel implements Disposable {
             return null;
         }
         if (ZaFridaTextUtil.isNumeric(trimmed)) {
-            return null;
-        }
-        return trimmed;
-    }
-
-    private static @Nullable String normalizeAdbDeviceId(@Nullable String lastDeviceId) {
-        if (ZaStrUtil.isBlank(lastDeviceId)) {
-            return null;
-        }
-        String trimmed = lastDeviceId.trim();
-        if (trimmed.isEmpty()) {
-            return null;
-        }
-        if ("usb".equalsIgnoreCase(trimmed)) {
             return null;
         }
         return trimmed;

@@ -15,10 +15,11 @@ import com.zafrida.ui.diagnostics.ZaFridaDiagnosticsService;
 import com.zafrida.ui.frida.FridaCliService;
 import com.zafrida.ui.frida.FridaCliException;
 import com.zafrida.ui.frida.FridaConnectionMode;
+import com.zafrida.ui.frida.FridaConnectionPlan;
 import com.zafrida.ui.frida.FridaDevice;
-import com.zafrida.ui.frida.FridaDeviceMode;
 import com.zafrida.ui.frida.FridaProcess;
 import com.zafrida.ui.frida.FridaProcessScope;
+import com.zafrida.ui.fridaproject.ZaFridaConnectionResolver;
 import com.zafrida.ui.fridaproject.ZaFridaFridaProject;
 import com.zafrida.ui.fridaproject.ZaFridaPlatform;
 import com.zafrida.ui.fridaproject.ZaFridaProjectConfig;
@@ -75,10 +76,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 public final class ZaFridaLocalHttpApiService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaLocalHttpApiService.class);
+    private static final List<String> LEGACY_PSEUDO_DEVICE_PREFIXES = List.of("remote:", "gadget:");
+    /** parseHostPort 的端口缺省值，用来识别 host 参数里没有带端口。 */
+    private static final int NO_PORT_IN_HOST = 0;
 
     private static final String BIND_HOST = "127.0.0.1";
     private static final long DEFAULT_TIMEOUT_SECONDS = 10L;
@@ -565,41 +570,87 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         if (ZaStrUtil.isBlank(id) && ZaStrUtil.isBlank(host)) {
             throw new ApiException(400, "Missing parameter: id or host");
         }
-
-        ZaFridaRunPanel panel = requireRunPanel();
-        boolean selected = callOnUiThreadAndWait(() -> {
-            boolean matched = false;
-            if (ZaStrUtil.isNotBlank(id)) {
-                matched = panel.selectDeviceByIdForApi(id);
+        if (ZaStrUtil.isBlank(host) && ZaStrUtil.isNotBlank(id)) {
+            host = legacyPseudoDeviceHost(id.trim());
+            if (host != null) {
+                id = null;
             }
-            if (!matched && ZaStrUtil.isNotBlank(host)) {
-                matched = panel.selectDeviceByHostForApi(host);
-            }
-            return matched;
-        });
-        if (!selected) {
-            FridaDevice discovered = findRequestedDevice(listAvailableDevices(), id, host);
-            if (discovered == null && ZaStrUtil.isNotBlank(host)) {
-                String normalizedHost = host.trim();
-                discovered = new FridaDevice(
-                        String.format("remote:%s", normalizedHost),
-                        "remote",
-                        "Remote",
-                        FridaDeviceMode.HOST,
-                        normalizedHost
-                );
-            }
-            if (discovered == null) {
-                throw new ApiException(404, "Device not found");
-            }
-            FridaDevice finalDiscovered = discovered;
-            runOnUiThreadAndWait(() -> panel.selectDeviceForApi(finalDiscovered));
         }
 
-        FridaDevice selectedDevice = callOnUiThreadAndWait(panel::getSelectedDeviceForApi);
+        ZaFridaRunPanel panel = requireRunPanel();
+        if (ZaStrUtil.isNotBlank(id) && selectPhysicalDevice(panel, id.trim())) {
+            FridaDevice selectedDevice = callOnUiThreadAndWait(panel::getSelectedDeviceForApi);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("device", deviceToMap(selectedDevice));
+            return data;
+        }
+        if (ZaStrUtil.isBlank(host)) {
+            throw new ApiException(404, "Device not found");
+        }
+        return selectLegacyHostEndpoint(panel, host.trim());
+    }
+
+    /** 旧版 /devices 会返回 {@code remote:<host:port>} / {@code gadget:<host:port>} 伪设备 id，这里还原出端点。 */
+    private static @Nullable String legacyPseudoDeviceHost(@NotNull String id) {
+        for (String prefix : LEGACY_PSEUDO_DEVICE_PREFIXES) {
+            if (id.startsWith(prefix) && id.length() > prefix.length()) {
+                return id.substring(prefix.length());
+            }
+        }
+        return null;
+    }
+
+    private boolean selectPhysicalDevice(@NotNull ZaFridaRunPanel panel, @NotNull String id) throws Exception {
+        boolean selected = callOnUiThreadAndWait(() -> panel.selectDeviceByIdForApi(id));
+        if (selected) {
+            return true;
+        }
+        FridaDevice discovered = findDeviceById(listAvailableDevices(), id);
+        if (discovered == null) {
+            return false;
+        }
+        runOnUiThreadAndWait(() -> panel.selectDeviceForApi(discovered));
+        return true;
+    }
+
+    /**
+     * 兼容旧调用：host 不再是「设备」而是连接端点，等价于 /connection-mode/set。
+     * USB 模式下同时切到 Remote，对应旧行为里选中 host 伪设备后直接用 -H 连接。
+     * 没有活动项目时连接状态只存在于界面上，直接改 Session 面板。
+     */
+    private @NotNull Map<String, Object> selectLegacyHostEndpoint(@NotNull ZaFridaRunPanel panel,
+                                                                  @NotNull String host) throws Exception {
+        ZaFridaNetUtil.HostPort endpoint = ZaFridaNetUtil.parseHostPort(host, ZaFridaConnectionResolver.defaultPort());
+        if (endpoint == null) {
+            throw new ApiException(400, String.format("Invalid host: %s", host));
+        }
+        ZaFridaFridaProject activeProject = projectManager.getActiveProject();
+        if (activeProject == null) {
+            runOnUiThreadAndWait(() -> {
+                FridaConnectionMode mode = remoteModeFor(panel.getConnectionPlanForApi().getMode());
+                panel.setUnsavedConnectionForApi(mode, endpoint.getHost(), endpoint.getPort());
+            });
+        } else {
+            updateConnectionConfig(activeProject, cfg -> {
+                cfg.connectionMode = remoteModeFor(cfg.connectionMode);
+                cfg.remoteHost = endpoint.getHost();
+                cfg.remotePort = endpoint.getPort();
+            });
+        }
+
+        FridaConnectionPlan plan = resolveConnectionPlan();
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("device", deviceToMap(selectedDevice));
+        data.put("device", deviceToMap(plan.getFridaDevice()));
+        data.put("connection", connectionToMap(plan));
+        data.put("deprecated", "device/select with host now sets the connection endpoint; use /connection-mode/set with host and port");
         return data;
+    }
+
+    private static @NotNull FridaConnectionMode remoteModeFor(@Nullable FridaConnectionMode current) {
+        if (current == FridaConnectionMode.GADGET) {
+            return FridaConnectionMode.GADGET;
+        }
+        return FridaConnectionMode.REMOTE;
     }
 
     private @NotNull Map<String, Object> handleConnectionModeSet(@NotNull RequestContext request) throws Exception {
@@ -609,39 +660,55 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         ZaFridaFridaProject activeProject = requireActiveProject();
         String host = request.get("host");
         Integer port = parseOptionalPort(request.get("port"));
+        // 兼容把端口写进 host 的调用（host=10.0.0.5:27042）；显式 port 参数优先。
+        ZaFridaNetUtil.HostPort requestedEndpoint = null;
+        if (ZaStrUtil.isNotBlank(host)) {
+            requestedEndpoint = ZaFridaNetUtil.parseHostPort(host, NO_PORT_IN_HOST);
+            if (requestedEndpoint == null) {
+                throw new ApiException(400, String.format("Invalid host: %s", host));
+            }
+        }
+        final ZaFridaNetUtil.HostPort finalRequestedEndpoint = requestedEndpoint;
 
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        projectManager.updateProjectConfigAsync(activeProject, cfg -> {
-            cfg.connectionMode = mode;
+        ZaFridaProjectConfig cfg = updateConnectionConfig(activeProject, config -> {
+            config.connectionMode = mode;
             if (mode == FridaConnectionMode.USB) {
-                cfg.lastDeviceHost = null;
                 return;
             }
 
-            if (ZaStrUtil.isNotBlank(host)) {
-                cfg.remoteHost = host.trim();
+            if (finalRequestedEndpoint != null) {
+                config.remoteHost = finalRequestedEndpoint.getHost();
+                if (finalRequestedEndpoint.getPort() != NO_PORT_IN_HOST) {
+                    config.remotePort = finalRequestedEndpoint.getPort();
+                }
             }
             if (port != null) {
-                cfg.remotePort = port;
+                config.remotePort = port;
             }
 
-            cfg.remoteHost = ZaFridaNetUtil.defaultHost(cfg.remoteHost);
-            cfg.remotePort = ZaFridaNetUtil.defaultPort(cfg.remotePort);
-            cfg.lastDeviceHost = String.format("%s:%s", cfg.remoteHost, cfg.remotePort);
-        }, () -> future.complete(null));
-        awaitVoidFuture(future, "Update connection mode timeout");
-
-        ZaFridaRunPanel panel = runPanelRef.get();
-        if (panel != null) {
-            runOnUiThreadAndWait(panel::refreshActiveProjectUiForApi);
-        }
-
-        ZaFridaProjectConfig cfg = loadProjectConfigBlocking(activeProject);
+            config.remoteHost = ZaFridaConnectionResolver.resolveHost(config);
+            config.remotePort = ZaFridaConnectionResolver.resolvePort(config);
+        });
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("mode", mode.name().toLowerCase(Locale.ROOT));
         data.put("config", configToMap(cfg));
         return data;
+    }
+
+    /** 写入连接配置并同步回填 Session 面板的 Mode 行；设备选择不受影响，也不重新枚举设备。 */
+    private @Nullable ZaFridaProjectConfig updateConnectionConfig(@NotNull ZaFridaFridaProject activeProject,
+                                                                  @NotNull Consumer<ZaFridaProjectConfig> mutator) throws Exception {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        projectManager.updateProjectConfigAsync(activeProject, mutator, () -> future.complete(null));
+        awaitVoidFuture(future, "Update connection mode timeout");
+
+        ZaFridaProjectConfig cfg = loadProjectConfigBlocking(activeProject);
+        ZaFridaRunPanel panel = runPanelRef.get();
+        if (panel != null) {
+            runOnUiThreadAndWait(() -> panel.applyConnectionForApi(cfg));
+        }
+        return cfg;
     }
 
     private @NotNull Map<String, Object> handleTargetSet(@NotNull RequestContext request) throws Exception {
@@ -1189,81 +1256,66 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         return data;
     }
 
+    /** 只返回真实设备；Remote/Gadget 端点属于连接模式，见 /state 的 connection。 */
     private @NotNull List<FridaDevice> listAvailableDevices() throws Exception {
-        List<FridaDevice> devices = new ArrayList<>(fridaCliService.listDevices(project));
-        for (String host : settingsService.getRemoteHosts()) {
-            addHostDeviceIfMissing(devices, host, "remote");
+        // Frida 依赖本机 adb server 枚举 Android 设备，但不会自己拉起它。
+        if (ZaFridaConnectionResolver.usesAdb(projectManager.getActiveProject())) {
+            adbService.ensureServerStarted();
         }
-
-        ZaFridaProjectConfig config = loadProjectConfigBlocking(projectManager.getActiveProject());
-        if (config != null
-                && (config.connectionMode == FridaConnectionMode.REMOTE
-                || config.connectionMode == FridaConnectionMode.GADGET)) {
-            String host = String.format(
-                    "%s:%s",
-                    ZaFridaNetUtil.defaultHost(config.remoteHost),
-                    ZaFridaNetUtil.defaultPort(config.remotePort)
-            );
-            String type = "remote";
-            if (config.connectionMode == FridaConnectionMode.GADGET) {
-                type = "gadget";
-            }
-            addHostDeviceIfMissing(devices, host, type);
-        }
-        return devices;
+        return new ArrayList<>(fridaCliService.listDevices(project));
     }
 
-    private void addHostDeviceIfMissing(@NotNull List<FridaDevice> devices,
-                                        @Nullable String rawHost,
-                                        @NotNull String type) {
-        if (ZaStrUtil.isBlank(rawHost)) {
-            return;
-        }
-        String host = rawHost.trim();
+    private @Nullable FridaDevice findDeviceById(@NotNull List<FridaDevice> devices, @NotNull String id) {
         for (FridaDevice device : devices) {
-            if (host.equals(device.getHost())) {
-                return;
-            }
-        }
-        String name = "Remote";
-        if ("gadget".equals(type)) {
-            name = "Gadget";
-        }
-        devices.add(new FridaDevice(
-                String.format("%s:%s", type, host),
-                type,
-                name,
-                FridaDeviceMode.HOST,
-                host
-        ));
-    }
-
-    private @Nullable FridaDevice findRequestedDevice(@NotNull List<FridaDevice> devices,
-                                                       @Nullable String id,
-                                                       @Nullable String host) {
-        for (FridaDevice device : devices) {
-            if (ZaStrUtil.isNotBlank(id) && id.trim().equals(device.getId())) {
-                return device;
-            }
-            if (ZaStrUtil.isNotBlank(host) && host.trim().equals(device.getHost())) {
+            if (id.equals(device.getId())) {
                 return device;
             }
         }
         return null;
     }
 
+    private @NotNull FridaConnectionPlan resolveConnectionPlan() throws Exception {
+        ZaFridaFridaProject active = projectManager.getActiveProject();
+        ZaFridaRunPanel panel = runPanelRef.get();
+        if (active == null && panel != null) {
+            // 自由脚本模式没有项目配置，连接状态只存在于界面上。
+            return callOnUiThreadAndWait(panel::getConnectionPlanForApi);
+        }
+        ZaFridaProjectConfig config = loadProjectConfigBlocking(active);
+        if (panel != null) {
+            FridaDevice selected = callOnUiThreadAndWait(panel::getSelectedDeviceForApi);
+            return ZaFridaConnectionResolver.resolve(active, config, selected);
+        }
+        return ZaFridaConnectionResolver.resolve(active, config, resolveSavedDeviceWithoutUi(config));
+    }
+
+    /**
+     * ToolWindow 尚未创建时没有界面选中项：用一次实时枚举确认项目保存的设备是否在线，
+     * 不在线（或枚举失败）返回未连接占位，由连接方案统一拦截；不得把保存的 id 当作在线设备直接使用。
+     */
+    private @Nullable FridaDevice resolveSavedDeviceWithoutUi(@Nullable ZaFridaProjectConfig config) {
+        if (config == null || ZaStrUtil.isBlank(config.lastDeviceId)) {
+            return null;
+        }
+        String savedId = config.lastDeviceId.trim();
+        try {
+            FridaDevice live = findDeviceById(listAvailableDevices(), savedId);
+            if (live != null) {
+                return live;
+            }
+        } catch (Exception e) {
+            LOG.warn(String.format("Enumerate devices failed while resolving saved device %s", savedId), e);
+        }
+        return FridaDevice.notConnected(savedId);
+    }
+
 
     private @NotNull Map<String, Object> handleProcesses(@NotNull RequestContext request) throws Exception {
-        FridaDevice device = callOnUiThreadAndWait(() -> {
-            ZaFridaRunPanel panel = runPanelRef.get();
-            if (panel == null) {
-                return null;
-            }
-            return panel.getSelectedDeviceForApi();
-        });
-
+        FridaConnectionPlan plan = resolveConnectionPlan();
+        FridaDevice device = plan.getFridaDevice();
         if (device == null) {
-            throw new ApiException(409, "未选中设备，请先通过 /device/select 选择设备");
+            throw new ApiException(409, String.format(
+                    "当前设备不可用（%s），请先通过 /device/select 选择在线设备", plan.getSummary()));
         }
 
         String scopeParam = request.get("scope");
@@ -1355,37 +1407,12 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
     }
 
     private @Nullable String resolveCurrentDeviceId() throws Exception {
-        FridaDevice device = callOnUiThreadAndWait(() -> {
-            ZaFridaRunPanel panel = runPanelRef.get();
-            if (panel == null) {
-                return null;
-            }
-            return panel.getSelectedDeviceForApi();
-        });
-        if (device == null) {
-            return resolveSavedAdbDeviceId();
+        FridaConnectionPlan plan = resolveConnectionPlan();
+        String blocker = plan.getAdbBlocker();
+        if (blocker != null) {
+            throw new ApiException(409, "DEVICE_NOT_CONNECTED", false, blocker);
         }
-        if (device.getMode() != FridaDeviceMode.DEVICE_ID) {
-            return resolveSavedAdbDeviceId();
-        }
-        String id = device.getId();
-        if (ZaStrUtil.isBlank(id) || "usb".equalsIgnoreCase(id)) {
-            return null;
-        }
-        return id;
-    }
-
-    private @Nullable String resolveSavedAdbDeviceId() throws Exception {
-        ZaFridaFridaProject activeProject = projectManager.getActiveProject();
-        ZaFridaProjectConfig config = loadProjectConfigBlocking(activeProject);
-        if (config == null || ZaStrUtil.isBlank(config.lastDeviceId)) {
-            return null;
-        }
-        String deviceId = config.lastDeviceId.trim();
-        if ("usb".equalsIgnoreCase(deviceId)) {
-            return null;
-        }
-        return deviceId;
+        return plan.getAdbSerial();
     }
 
     private @NotNull Map<String, Object> buildAdbResult(@NotNull String action,
@@ -1435,13 +1462,7 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
 
 
     private @NotNull Map<String, Object> handleDiagnostics(@NotNull RequestContext request) throws Exception {
-        FridaDevice device = callOnUiThreadAndWait(() -> {
-            ZaFridaRunPanel panel = runPanelRef.get();
-            if (panel == null) {
-                return null;
-            }
-            return panel.getSelectedDeviceForApi();
-        });
+        FridaDevice device = resolveConnectionPlan().getFridaDevice();
 
         List<ZaFridaDiagnosticItem> items = diagnosticsService.createDefaultItems();
         CompletableFuture<List<ZaFridaDiagnosticItem>> future = new CompletableFuture<>();
@@ -1529,11 +1550,19 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         ui.put("attachScript", uiSnapshot.attachScript);
         ui.put("selectedDevice", deviceToMap(uiSnapshot.selectedDevice));
 
+        // 汇总接口不为此额外枚举设备：ToolWindow 未创建时 selectedDevice 为空，connection 如实反映「未选设备」。
+        FridaConnectionPlan plan = ZaFridaConnectionResolver.resolve(active, cfg, uiSnapshot.selectedDevice);
+        ZaFridaRunPanel statePanel = runPanelRef.get();
+        if (active == null && statePanel != null) {
+            plan = callOnUiThreadAndWait(statePanel::getConnectionPlanForApi);
+        }
+
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("api", api);
         data.put("activeProject", projectToMap(active));
         data.put("projects", projectListToMap(projectManager.listProjects()));
         data.put("config", configToMap(cfg));
+        data.put("connection", connectionToMap(plan));
         data.put("ui", ui);
         data.put("session", session);
         data.put("logs", logs);
@@ -1932,7 +1961,15 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         data.put("mainScript", cfg.mainScript);
         data.put("attachScript", cfg.attachScript);
         data.put("lastDeviceId", cfg.lastDeviceId);
-        data.put("lastDeviceHost", cfg.lastDeviceHost);
+        // 兼容旧键：端点已并入连接模式，这里只保留派生值，不再持久化。
+        String legacyDeviceHost = null;
+        if (cfg.connectionMode != FridaConnectionMode.USB) {
+            legacyDeviceHost = ZaFridaNetUtil.formatHostPort(
+                    ZaFridaConnectionResolver.resolveHost(cfg),
+                    ZaFridaConnectionResolver.resolvePort(cfg)
+            );
+        }
+        data.put("lastDeviceHost", legacyDeviceHost);
         data.put("pythonEnvironmentPath", cfg.pythonEnvironmentPath);
         return data;
     }
@@ -1947,6 +1984,24 @@ public final class ZaFridaLocalHttpApiService implements Disposable {
         data.put("type", device.getType());
         data.put("host", device.getHost());
         data.put("mode", device.getMode().name().toLowerCase(Locale.ROOT));
+        data.put("connected", device.isConnected());
+        return data;
+    }
+
+    private @NotNull Map<String, Object> connectionToMap(@NotNull FridaConnectionPlan plan) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("mode", plan.getMode().name().toLowerCase(Locale.ROOT));
+        data.put("fridaDevice", deviceToMap(plan.getFridaDevice()));
+        data.put("adbSerial", plan.getAdbSerial());
+        data.put("adbForward", plan.isAdbForwardRequired());
+        Integer forwardPort = null;
+        if (plan.isAdbForwardRequired()) {
+            forwardPort = plan.getForwardPort();
+        }
+        data.put("forwardPort", forwardPort);
+        data.put("sessionBlocker", plan.getSessionBlocker());
+        data.put("adbBlocker", plan.getAdbBlocker());
+        data.put("summary", plan.getSummary());
         return data;
     }
 

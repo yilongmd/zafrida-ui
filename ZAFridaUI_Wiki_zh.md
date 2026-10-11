@@ -295,9 +295,15 @@ Run 面板负责把 frida-tools 的常用参数变成“可视化字段”。
 
 #### 2) Device
 
-- 选择设备（USB / Remote / Gadget）
-- 按 **刷新** 按钮重新枚举
-- 点 **+** 可快速添加一个远程 `host:port`（会写入全局 Remote Hosts）
+- 选择真实设备（哪台手机）。任何连接模式下都要选：USB 模式下它是 Frida 目标，Remote/Gadget 模式下它决定 adb 端口转发、Force Stop、Open App 操作哪台手机
+- 按 **刷新** 按钮重新枚举；adb server 没启动时会自动拉起，不需要先手动执行 `adb devices`
+- 已保存的设备不在线时显示 `(not connected)` 占位并拦截运行；如果此时只连着一台 USB 设备，会临时改用它并在 Console 提示
+
+#### 2.1) Mode
+
+- 选择连接模式：USB / Remote / Gadget，与 Device 相互独立
+- Remote / Gadget 时右侧出现端点 `host:port`，可直接输入（回车生效）或从下拉里选全局 Remote Hosts
+- 下方灰色小字是实际会执行的路由，例如 `adb -s <serial> forward tcp:14725 → frida -H 127.0.0.1:14725 -F`
 
 #### 3) Run Script
 

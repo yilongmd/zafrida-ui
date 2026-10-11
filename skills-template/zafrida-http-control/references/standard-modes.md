@@ -54,14 +54,13 @@ python3 <skill-dir>/scripts/zafrida_api.py attach-log-tail --max-bytes 65536
 
 ## Remote 模式
 
-Remote 使用 `-H <host>:<port>` 连接远端 frida-server。`devices` 中的 Remote 条目可以由配置合成，不能证明网络端点可用；必须通过 `processes` 或一次有界诊断验证连接。
+Remote 使用 `-H <host>:<port>` 连接远端 frida-server。端点属于连接模式，不出现在 `devices` 里；`state.connection` 只说明当前配置，必须通过 `processes` 或一次有界诊断验证连接。
 
 ### 标准 Run
 
 ```bash
 python3 <skill-dir>/scripts/zafrida_api.py state
 python3 <skill-dir>/scripts/zafrida_api.py mode-set --mode remote --host <host> --port <port>
-python3 <skill-dir>/scripts/zafrida_api.py device-select --host <host>:<port>
 python3 <skill-dir>/scripts/zafrida_api.py processes --scope apps
 python3 <skill-dir>/scripts/zafrida_api.py target-set --target <spawn-target>
 python3 <skill-dir>/scripts/zafrida_api.py run-script-set --path /absolute/agent.js
@@ -70,7 +69,7 @@ python3 <skill-dir>/scripts/zafrida_api.py wait-session --type run --state runni
 python3 <skill-dir>/scripts/zafrida_api.py run-log-tail --max-bytes 65536
 ```
 
-配置已经正确时不要重复写入 mode/host/port。非 loopback 地址直接连接远端端点；loopback Android 场景中，ZAFrida 会尝试 ADB port forwarding，因此还要保证 ADB 设备选择和转发链路正确。转发失败或端口不可达时，先运行 `diagnostics`，不能直接反复 Run。
+配置已经正确时不要重复写入 mode/host/port。非 loopback 地址直接连接远端端点；loopback Android 场景中，ZAFrida 会把端口转发到当前选中的设备，因此还要用 `device-select --id` 选对手机，并确认 `state.connection.adbSerial`。转发失败只会告警、不会中止 Run，此时 Frida 可能连到该端口上残留的旧转发；出现转发告警或端口不可达时，先运行 `diagnostics`，不能直接反复 Run。
 
 标准 Remote Run 仍由远端 frida-server spawn Target，不要求先手动打开 app。Remote Attach 与 USB Attach 一样是可选阶段：先用 `processes` 证明目标存在，再设置 Attach Script、Target，执行一次 Attach 并读取 Attach 日志。
 

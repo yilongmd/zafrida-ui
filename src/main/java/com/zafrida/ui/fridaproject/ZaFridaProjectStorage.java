@@ -1,5 +1,7 @@
 package com.zafrida.ui.fridaproject;
 
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -10,6 +12,8 @@ import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.zafrida.ui.frida.FridaConnectionMode;
 import com.zafrida.ui.frida.FridaProcessScope;
+import com.zafrida.ui.settings.ZaFridaSettingsService;
+import com.zafrida.ui.util.ZaFridaNetUtil;
 import com.zafrida.ui.util.ZaStrUtil;
 import org.jdom.Document;
 import org.jdom.Element;
@@ -21,10 +25,25 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Predicate;
 
 public final class ZaFridaProjectStorage {
 
     private static final Logger LOG = Logger.getInstance(ZaFridaProjectStorage.class);
+    private static final String LEGACY_LAST_DEVICE_HOST = "lastDeviceHost";
+
+    private final @NotNull Predicate<String> knownRemoteHost;
+
+    public ZaFridaProjectStorage() {
+        this(ZaFridaProjectStorage::isGlobalRemoteHost);
+    }
+
+    /**
+     * @param knownRemoteHost 判断某个 host:port 是否仍在全局 Remote Hosts 列表里，只用于旧配置迁移
+     */
+    ZaFridaProjectStorage(@NotNull Predicate<String> knownRemoteHost) {
+        this.knownRemoteHost = knownRemoteHost;
+    }
 
     public @NotNull ZaFridaWorkspaceConfig loadWorkspace(@NotNull Project project) {
         VirtualFile base = ProjectUtil.guessProjectDir(project);
@@ -211,7 +230,7 @@ public final class ZaFridaProjectStorage {
         cfg.remoteHost = root.getAttributeValue("remoteHost", "127.0.0.1");
         cfg.remotePort = parsePort(root.getAttributeValue("remotePort"), 14725);
         cfg.lastDeviceId = root.getAttributeValue("lastDeviceId");
-        cfg.lastDeviceHost = root.getAttributeValue("lastDeviceHost");
+        migrateLegacyDeviceHost(cfg, root.getAttributeValue(LEGACY_LAST_DEVICE_HOST));
         cfg.pythonEnvironmentPath = root.getAttributeValue("pythonEnvironmentPath", "");
         return cfg;
     }
@@ -236,13 +255,45 @@ public final class ZaFridaProjectStorage {
         if (cfg.lastDeviceId != null) {
             root.setAttribute("lastDeviceId", cfg.lastDeviceId);
         }
-        if (cfg.lastDeviceHost != null) {
-            root.setAttribute("lastDeviceHost", cfg.lastDeviceHost);
-        }
         if (ZaStrUtil.isNotBlank(cfg.pythonEnvironmentPath)) {
             root.setAttribute("pythonEnvironmentPath", cfg.pythonEnvironmentPath.trim());
         }
         return JDOMUtil.writeDocument(new Document(root), "\n");
+    }
+
+    /**
+     * 旧版本把 Remote 端点当作设备保存在 lastDeviceHost：USB 模式下只要它仍在全局 Remote Hosts 列表里，
+     * 刷新后就会恢复选中它并用 -H 连接（优先于 lastDeviceId）。迁移保持这一实际行为：仍在列表里的按
+     * Remote + 该端点迁移（lastDeviceId 原样保留为真实设备），否则丢弃这个历史值。
+     * 该属性只读不写，迁移结果随下一次保存落盘。
+     */
+    private void migrateLegacyDeviceHost(@NotNull ZaFridaProjectConfig cfg, @Nullable String legacyHost) {
+        if (ZaStrUtil.isBlank(legacyHost) || cfg.connectionMode != FridaConnectionMode.USB) {
+            return;
+        }
+        String host = legacyHost.trim();
+        if (!knownRemoteHost.test(host)) {
+            LOG.info(String.format("Drop legacy ZAFrida device host that is no longer a known remote host: %s", host));
+            return;
+        }
+        ZaFridaNetUtil.HostPort endpoint = ZaFridaNetUtil.parseHostPort(host, ZaFridaNetUtil.DEFAULT_FRIDA_PORT);
+        if (endpoint == null) {
+            LOG.warn(String.format("Ignore unparseable legacy ZAFrida device host: %s", host));
+            return;
+        }
+        cfg.connectionMode = FridaConnectionMode.REMOTE;
+        cfg.remoteHost = endpoint.getHost();
+        cfg.remotePort = endpoint.getPort();
+        LOG.info(String.format("Migrated legacy ZAFrida device host to Remote mode: %s", endpoint));
+    }
+
+    private static boolean isGlobalRemoteHost(@NotNull String host) {
+        Application application = ApplicationManager.getApplication();
+        if (application == null) {
+            return false;
+        }
+        ZaFridaSettingsService settings = application.getService(ZaFridaSettingsService.class);
+        return settings != null && settings.getRemoteHosts().contains(host);
     }
 
     private static int parsePort(@Nullable String value, int fallback) {

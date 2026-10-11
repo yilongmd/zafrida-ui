@@ -17,10 +17,11 @@ import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.JBUI;
 import com.zafrida.ui.frida.FridaCliService;
 import com.zafrida.ui.frida.FridaConnectionMode;
+import com.zafrida.ui.frida.FridaConnectionPlan;
 import com.zafrida.ui.frida.FridaDevice;
-import com.zafrida.ui.frida.FridaDeviceMode;
 import com.zafrida.ui.frida.FridaProcess;
 import com.zafrida.ui.frida.FridaProcessScope;
+import com.zafrida.ui.fridaproject.ZaFridaConnectionResolver;
 import com.zafrida.ui.fridaproject.ZaFridaFridaProject;
 import com.zafrida.ui.fridaproject.ZaFridaPlatform;
 import com.zafrida.ui.fridaproject.ZaFridaProjectConfig;
@@ -91,7 +92,6 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
     private final ZaFridaEnvironmentDetailsController environmentDetailsController;
 
     private @Nullable ZaFridaFridaProject activeProject;
-    private @Nullable ZaFridaProjectConfig activeProjectConfig;
     private int pythonValidationGeneration;
     private int targetRefreshGeneration;
     private boolean updatingPythonEnvironmentSelection;
@@ -317,7 +317,6 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
     private void loadFromProject() {
         activeProject = projectManager.getActiveProject();
         updateProjectInfo();
-        activeProjectConfig = null;
         if (activeProject == null) {
             connectionModeCombo.setEnabled(false);
             remoteHostField.setEnabled(false);
@@ -351,7 +350,6 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             return;
         }
         ZaFridaProjectConfig config = state.getConfig();
-        activeProjectConfig = config;
         updateProjectDetails(state);
         applyProjectConfigToControls(config);
         inspectPythonEnvironment(config.pythonEnvironmentPath, modality, false);
@@ -595,10 +593,12 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             return;
         }
         int refreshGeneration = ++targetRefreshGeneration;
-        FridaDevice device = resolveDeviceForTargets();
+        FridaConnectionPlan plan = resolvePlanForTargets();
+        FridaDevice device = plan.getFridaDevice();
         if (device == null) {
-            Messages.showWarningDialog(project, "Select a device first in the Run panel.", "ZAFrida");
-            logError("[ZAFrida] Select a device first in the Run panel.");
+            String reason = plan.getSummary();
+            Messages.showWarningDialog(project, String.format("%s. Select a connected device in the Session panel.", reason), "ZAFrida");
+            logError(String.format("[ZAFrida] Cannot load targets: %s", reason));
             return;
         }
         FridaProcessScope scope = (FridaProcessScope) scopeCombo.getSelectedItem();
@@ -699,7 +699,7 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         FridaProcessScope scope = (FridaProcessScope) scopeCombo.getSelectedItem();
         String target = getTargetText();
         FridaConnectionMode connectionMode = (FridaConnectionMode) connectionModeCombo.getSelectedItem();
-        HostPort hostPort = resolveHostPortForSave();
+        ZaFridaNetUtil.HostPort hostPort = resolveHostPortForSave();
         String pythonEnvironmentPath = getPythonEnvironmentPath();
         boolean targetManual = manualTargetRadio.isSelected();
 
@@ -722,8 +722,8 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             } else {
                 cfg.connectionMode = FridaConnectionMode.USB;
             }
-            cfg.remoteHost = hostPort.host;
-            cfg.remotePort = hostPort.port;
+            cfg.remoteHost = hostPort.getHost();
+            cfg.remotePort = hostPort.getPort();
             cfg.pythonEnvironmentPath = pythonEnvironmentPath;
         }, () -> {
             if (saveGeneration != pythonValidationGeneration) {
@@ -800,71 +800,31 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         remotePortField.setEnabled(remote);
     }
 
-    private @Nullable FridaDevice resolveDeviceForTargets() {
+    private @NotNull FridaConnectionPlan resolvePlanForTargets() {
         FridaConnectionMode mode = (FridaConnectionMode) connectionModeCombo.getSelectedItem();
-        if (mode == FridaConnectionMode.REMOTE || mode == FridaConnectionMode.GADGET) {
-            HostPort hostPort = resolveHostPortForSave();
-            String host = String.format("%s:%s", hostPort.host, hostPort.port);
-            String type = "remote";
-            String name = "Remote";
-            if (mode == FridaConnectionMode.GADGET) {
-                type = "gadget";
-                name = "Gadget";
-            }
-            return new FridaDevice(String.format("%s:%s", type, host), type, name, FridaDeviceMode.HOST, host);
+        if (mode == null) {
+            mode = FridaConnectionMode.USB;
         }
-
-        FridaDevice device = deviceSupplier.get();
-        if (device != null) {
-            return device;
-        }
-
-        if (activeProject != null) {
-            ZaFridaProjectConfig cfg = activeProjectConfig;
-            if (cfg != null) {
-                if (ZaStrUtil.isNotBlank(cfg.lastDeviceHost)) {
-                    return new FridaDevice(String.format("remote:%s", cfg.lastDeviceHost), "remote", "Remote", FridaDeviceMode.HOST, cfg.lastDeviceHost);
-                }
-                if (ZaStrUtil.isNotBlank(cfg.lastDeviceId)) {
-                    return new FridaDevice(cfg.lastDeviceId, "device", cfg.lastDeviceId, FridaDeviceMode.DEVICE_ID, null);
-                }
-            }
-        }
-        return null;
+        ZaFridaNetUtil.HostPort hostPort = resolveHostPortForSave();
+        return FridaConnectionPlan.resolve(
+                mode,
+                hostPort.getHost(),
+                hostPort.getPort(),
+                deviceSupplier.get(),
+                ZaFridaConnectionResolver.usesAdb(activeProject)
+        );
     }
 
-    private HostPort resolveHostPortForSave() {
-        ZaFridaSettingsState st = ApplicationManager.getApplication()
-                .getService(ZaFridaSettingsService.class)
-                .getState();
+    private ZaFridaNetUtil.HostPort resolveHostPortForSave() {
         String host = ZaFridaNetUtil.normalizeHost(remoteHostField.getText());
         if (host.isEmpty()) {
-            host = ZaFridaNetUtil.normalizeHost(st.defaultRemoteHost);
+            host = ZaFridaConnectionResolver.defaultHost();
         }
-        if (host.isEmpty()) {
-            host = ZaFridaNetUtil.LOOPBACK_HOST;
-        }
-
-        int port = parsePort(remotePortField.getText());
+        int port = ZaFridaNetUtil.parsePort(remotePortField.getText());
         if (port <= 0) {
-            port = ZaFridaNetUtil.defaultPort(st.defaultRemotePort);
+            port = ZaFridaConnectionResolver.defaultPort();
         }
-        return new HostPort(host, port);
-    }
-
-    private static int parsePort(@Nullable String portText) {
-        if (ZaStrUtil.isBlank(portText)) {
-            return 0;
-        }
-        try {
-            int value = Integer.parseInt(portText.trim());
-            if (value <= 0 || value > 65_535) {
-                return 0;
-            }
-            return value;
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        return new ZaFridaNetUtil.HostPort(host, port);
     }
 
     private @Nullable String validateRemotePort() {
@@ -876,20 +836,10 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         if (ZaStrUtil.isBlank(text)) {
             return null;
         }
-        if (parsePort(text) <= 0) {
+        if (ZaFridaNetUtil.parsePort(text) <= 0) {
             return "Remote port must be between 1 and 65535";
         }
         return null;
-    }
-
-    private static final class HostPort {
-        private final String host;
-        private final int port;
-
-        private HostPort(String host, int port) {
-            this.host = host;
-            this.port = port;
-        }
     }
 
     private static @Nullable String targetLabel(@NotNull FridaProcess p) {

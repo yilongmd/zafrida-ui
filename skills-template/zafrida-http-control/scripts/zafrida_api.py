@@ -167,10 +167,10 @@ def build_command_parser() -> argparse.ArgumentParser:
     processes = sub.add_parser("processes", help="列出当前设备进程或应用")
     processes.add_argument("--scope", choices=["running", "apps", "installed"], default="running")
 
-    device_select = sub.add_parser("device-select", help="选择设备")
+    device_select = sub.add_parser("device-select", help="选择真实设备（Frida USB 目标与 adb serial）")
     device_group = device_select.add_mutually_exclusive_group(required=True)
     device_group.add_argument("--id")
-    device_group.add_argument("--host")
+    device_group.add_argument("--host", help="已弃用：端点属于连接模式，请改用 mode-set --host/--port")
 
     mode_set = sub.add_parser("mode-set", help="设置连接模式")
     mode_set.add_argument("--mode", choices=["usb", "remote", "gadget"], required=True)
@@ -222,7 +222,7 @@ def build_command_parser() -> argparse.ArgumentParser:
     wait_device = sub.add_parser("wait-device", help="等待设备出现，适合 USB/网络抖动恢复")
     wait_group = wait_device.add_mutually_exclusive_group()
     wait_group.add_argument("--id")
-    wait_group.add_argument("--host")
+    wait_group.add_argument("--host", help="已弃用：devices 只列出真实设备，不再包含 Remote/Gadget 端点")
     wait_device.add_argument("--type", dest="device_type")
     wait_device.add_argument("--timeout", type=float, default=60.0)
     wait_device.add_argument("--interval", type=float, default=2.0)
@@ -310,6 +310,16 @@ def response_data(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def wait_for_device(common: argparse.Namespace, args: argparse.Namespace) -> Tuple[int, Dict[str, Any]]:
+    if args.host:
+        # devices 只列出真实设备；继续轮询只会白等到超时。
+        return 400, {
+            "ok": False,
+            "status": 400,
+            "errorCode": "WAIT_DEVICE_HOST_UNSUPPORTED",
+            "retryable": False,
+            "message": "Remote/Gadget endpoints are no longer listed as devices; "
+                       "verify the endpoint with `processes` and read `state.connection` instead",
+        }
     started = time.monotonic()
     attempts = 0
     last_payload: Dict[str, Any] = {}
