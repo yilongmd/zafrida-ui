@@ -17,6 +17,7 @@ Current Version: 0.3.9
 - Fixed Project Settings saving a Target package while the Session panel continued to show the old value. Connection mode, endpoint, and Python environment settings now reload after saving as well.
 - Fixed initial Project Settings values being delayed by the modal dialog and the saved Target being lost when the process list refreshes in "Select from device" mode.
 - Saving project settings now reports an error if the project directory is missing instead of claiming success.
+- Fixed Python plugin dependency resolution in newer JetBrains IDEs and migrated deprecated, internal, and non-extendable IntelliJ Platform API usages.
 
 ## What's New in 0.3.8
 

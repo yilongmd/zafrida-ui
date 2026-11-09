@@ -17,6 +17,7 @@ ZAFrida UI - PyCharm Frida Plugin
 - 修复 Project Settings 保存 Target 包名后，Session 面板仍显示旧值的问题；连接模式、端点和 Python 环境等项目设置也会在保存后正确回填。
 - 修复 Project Settings 首次打开时异步配置回填可能被模态对话框延迟，以及“从设备选择”刷新进程列表时丢失已保存 Target 的问题。
 - 项目目录不存在时，保存设置会明确报错，不再误报成功。
+- 修复新版 JetBrains IDE 的 Python 插件依赖解析问题，并迁移废弃、内部及不可扩展的 IntelliJ Platform API 用法。
 
 ## 0.3.8 主要更新
 

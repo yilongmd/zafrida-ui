@@ -7,7 +7,7 @@ import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.editor.Document;
@@ -250,7 +250,7 @@ public final class ZaFridaConsolePanel extends JPanel implements Disposable {
                 return;
             }
             ApplicationManager.getApplication().invokeLater(() ->
-                    FileEditorManager.getInstance(project).openFile(file, true));
+                    new OpenFileDescriptor(project, file).navigate(true));
         });
     }
 

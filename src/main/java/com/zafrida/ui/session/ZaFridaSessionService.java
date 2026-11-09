@@ -1,8 +1,8 @@
 package com.zafrida.ui.session;
 
-import com.intellij.execution.process.ProcessAdapter;
 import com.intellij.execution.process.ProcessEvent;
 import com.intellij.execution.process.ProcessHandler;
+import com.intellij.execution.process.ProcessListener;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.openapi.Disposable;
@@ -87,7 +87,8 @@ public final class ZaFridaSessionService implements Disposable {
         }
 
         SessionLogWriter finalWriter = writer;
-        handler.addProcessListener(new ProcessAdapter() {
+        // 新版平台已废弃 ProcessAdapter，ProcessListener 的默认方法保留相同的回调行为。
+        handler.addProcessListener(new ProcessListener() {
             @Override
             public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
                 if (finalWriter != null) {
@@ -191,8 +192,8 @@ public final class ZaFridaSessionService implements Disposable {
         return session;
     }
 
-    public @NotNull ProcessAdapter createUiStateListener(@NotNull Runnable onTerminated) {
-        return new ProcessAdapter() {
+    public @NotNull ProcessListener createUiStateListener(@NotNull Runnable onTerminated) {
+        return new ProcessListener() {
             @Override
             public void processTerminated(@NotNull ProcessEvent event) {
                 ApplicationManager.getApplication().invokeLater(() -> {

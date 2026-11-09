@@ -1,9 +1,7 @@
 package com.zafrida.ui.toolwindow;
 
-import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManagerCore;
+import com.intellij.ide.plugins.cl.PluginAwareClassLoader;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
@@ -52,13 +50,16 @@ public final class ZaFridaToolWindowFactory implements ToolWindowFactory, DumbAw
     }
 
     private @NotNull String resolvePluginVersion() {
-        IdeaPluginDescriptor descriptor = PluginManagerCore.getPlugin(
-                PluginId.getId(ZaFridaPluginUpdateService.PLUGIN_ID)
-        );
-        if (descriptor == null || descriptor.getVersion() == null || descriptor.getVersion().isBlank()) {
+        // PluginManagerCore.getPlugin 在新版平台属于 internal；自身类加载器可提供相同的版本信息。
+        ClassLoader loader = getClass().getClassLoader();
+        if (!(loader instanceof PluginAwareClassLoader)) {
             return "";
         }
-        return descriptor.getVersion().trim();
+        String version = ((PluginAwareClassLoader) loader).getPluginDescriptor().getVersion();
+        if (version == null || version.isBlank()) {
+            return "";
+        }
+        return version.trim();
     }
 
     private @NotNull String buildToolWindowTitle(@NotNull String pluginVersion) {

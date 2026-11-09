@@ -100,7 +100,8 @@ public final class ProjectPythonEnvResolver {
             return List.of();
         }
         try {
-            return ReadAction.compute(() -> {
+            // 后台线程读取 SDK；写操作到来时由 nonBlocking 重试，避免阻塞 IDE 写锁。
+            return ReadAction.nonBlocking(() -> {
                 LinkedHashSet<String> paths = new LinkedHashSet<>();
                 addSdkHome(paths, ProjectRootManager.getInstance(project).getProjectSdk());
                 for (Module module : ModuleManager.getInstance(project).getModules()) {
@@ -110,7 +111,7 @@ public final class ProjectPythonEnvResolver {
                     addSdkHome(paths, sdk);
                 }
                 return new ArrayList<>(paths);
-            });
+            }).executeSynchronously();
         } catch (ProcessCanceledException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -124,7 +125,7 @@ public final class ProjectPythonEnvResolver {
             return null;
         }
         try {
-            Sdk sdk = ReadAction.compute(() -> findPythonSdk(project));
+            Sdk sdk = ReadAction.nonBlocking(() -> findPythonSdk(project)).executeSynchronously();
             if (sdk == null || ZaStrUtil.isBlank(sdk.getHomePath())) {
                 return null;
             }
