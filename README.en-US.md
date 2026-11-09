@@ -4,13 +4,19 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-Current Version: 0.3.8
+Current Version: 0.3.9
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![](https://img.shields.io/badge/Author-ZAFrida-orange.svg)](https://github.com/yilongmd/zafrida-ui)
 [![](https://img.shields.io/badge/Platform-IntelliJ-brightgreen.svg)](https://plugins.jetbrains.com/)
 [![GitHub stars](https://img.shields.io/github/stars/yilongmd/zafrida-ui.svg?style=social&label=Stars)](https://github.com/yilongmd/zafrida-ui)
+
+## What's New in 0.3.9
+
+- Fixed Project Settings saving a Target package while the Session panel continued to show the old value. Connection mode, endpoint, and Python environment settings now reload after saving as well.
+- Fixed initial Project Settings values being delayed by the modal dialog and the saved Target being lost when the process list refreshes in "Select from device" mode.
+- Saving project settings now reports an error if the project directory is missing instead of claiming success.
 
 ## What's New in 0.3.8
 

@@ -4,13 +4,19 @@
 ZAFrida UI - PyCharm Frida Plugin
 ===============
 
-当前版本： 0.3.8
+当前版本： 0.3.9
 
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![](https://img.shields.io/badge/Author-ZAFrida-orange.svg)](https://github.com/yilongmd/zafrida-ui)
 [![](https://img.shields.io/badge/Platform-IntelliJ-brightgreen.svg)](https://plugins.jetbrains.com/)
 [![GitHub stars](https://img.shields.io/github/stars/yilongmd/zafrida-ui.svg?style=social&label=Stars)](https://github.com/yilongmd/zafrida-ui)
+
+## 0.3.9 主要更新
+
+- 修复 Project Settings 保存 Target 包名后，Session 面板仍显示旧值的问题；连接模式、端点和 Python 环境等项目设置也会在保存后正确回填。
+- 修复 Project Settings 首次打开时异步配置回填可能被模态对话框延迟，以及“从设备选择”刷新进程列表时丢失已保存 Target 的问题。
+- 项目目录不存在时，保存设置会明确报错，不再误报成功。
 
 ## 0.3.8 主要更新
 

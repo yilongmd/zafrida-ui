@@ -332,7 +332,8 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             return;
         }
         setPythonEnvironmentControlsEnabled(false);
-        ModalityState modality = ModalityState.stateForComponent(projectInfoLabel);
+        // 构造阶段对话框尚未显示，组件的模态状态可能仍是 NON_MODAL；初次回填必须能在对话框打开后执行。
+        ModalityState modality = ModalityState.any();
         ZaFridaFridaProject projectToLoad = activeProject;
         projectManager.loadProjectUiStateAsync(
                 projectToLoad,
@@ -621,12 +622,28 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
                             || !selectTargetRadio.isSelected()) {
                         return;
                     }
+                    Object currentSelection = targetCombo.getSelectedItem();
+                    String selectedTarget = "";
+                    if (currentSelection != null) {
+                        selectedTarget = currentSelection.toString().trim();
+                    }
                     targetCombo.removeAllItems();
+                    boolean selectedTargetFound = false;
                     for (FridaProcess p : processes) {
                         String label = targetLabel(p);
                         if (ZaStrUtil.isNotBlank(label)) {
                             targetCombo.addItem(label);
+                            if (label.equals(selectedTarget)) {
+                                selectedTargetFound = true;
+                            }
                         }
+                    }
+                    // 已保存的包名可能不在本次进程列表中，刷新列表不应悄悄改选第一项。
+                    if (!selectedTarget.isEmpty()) {
+                        if (!selectedTargetFound) {
+                            targetCombo.addItem(selectedTarget);
+                        }
+                        targetCombo.setSelectedItem(selectedTarget);
                     }
                     refreshTargetsBtn.setEnabled(true);
                 }, modality);
@@ -702,6 +719,8 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
         ZaFridaNetUtil.HostPort hostPort = resolveHostPortForSave();
         String pythonEnvironmentPath = getPythonEnvironmentPath();
         boolean targetManual = manualTargetRadio.isSelected();
+        // 保存完成后要在当前模态对话框内关闭窗口，否则 Run Panel 无法收到 showAndGet 的成功结果并刷新。
+        ModalityState modality = ModalityState.stateForComponent(pythonEnvironmentCombo);
 
         int saveGeneration = ++pythonValidationGeneration;
         setOKActionEnabled(false);
@@ -731,7 +750,7 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             }
             setOKActionEnabled(true);
             closeAfterSuccessfulSave();
-        }, error -> {
+        }, modality, error -> {
             if (saveGeneration != pythonValidationGeneration) {
                 return;
             }
@@ -778,11 +797,12 @@ public final class ZaFridaProjectSettingsDialog extends DialogWrapper {
             normalizedValue = value.trim();
         }
         manualTargetField.setText(normalizedValue);
-        if (ZaStrUtil.isBlank(value)) {
-            targetCombo.setSelectedItem(null);
-            return;
+        targetCombo.removeAllItems();
+        if (!normalizedValue.isEmpty()) {
+            // 非可编辑下拉只接受已有选项，先放入已保存的 Target 才能恢复选中。
+            targetCombo.addItem(normalizedValue);
+            targetCombo.setSelectedItem(normalizedValue);
         }
-        targetCombo.setSelectedItem(value);
     }
 
     private void updateTargetModeUi() {

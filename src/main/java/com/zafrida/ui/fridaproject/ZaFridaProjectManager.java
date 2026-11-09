@@ -329,7 +329,15 @@ public final class ZaFridaProjectManager {
                                          @NotNull Consumer<ZaFridaProjectConfig> mutator,
                                          @Nullable Runnable uiAfter,
                                          @NotNull Consumer<Throwable> errorConsumer) {
-        runConfigTask(() -> updateProjectConfigInternal(p, mutator), uiAfter, null, errorConsumer);
+        updateProjectConfigAsync(p, mutator, uiAfter, null, errorConsumer);
+    }
+
+    public void updateProjectConfigAsync(@NotNull ZaFridaFridaProject p,
+                                         @NotNull Consumer<ZaFridaProjectConfig> mutator,
+                                         @Nullable Runnable uiAfter,
+                                         @Nullable ModalityState modality,
+                                         @NotNull Consumer<Throwable> errorConsumer) {
+        runConfigTask(() -> updateProjectConfigInternal(p, mutator), uiAfter, modality, errorConsumer);
     }
 
     public void updateMainScriptPathAsync(@NotNull ZaFridaFridaProject p, @NotNull VirtualFile file) {
@@ -458,7 +466,8 @@ public final class ZaFridaProjectManager {
                                              @NotNull Consumer<ZaFridaProjectConfig> mutator) {
         VirtualFile dir = resolveProjectDirInternal(p);
         if (dir == null) {
-            return;
+            throw new IllegalStateException(String.format(
+                    "ZAFrida project directory not found: %s", p.getRelativeDir()));
         }
         ZaFridaProjectConfig cfg = storage.loadProjectConfig(project, dir);
         mutator.accept(cfg);
@@ -632,6 +641,12 @@ public final class ZaFridaProjectManager {
                                @Nullable Runnable uiTask,
                                @Nullable ModalityState modality,
                                @Nullable Consumer<Throwable> errorConsumer) {
+        ModalityState state;
+        if (modality != null) {
+            state = modality;
+        } else {
+            state = ModalityState.nonModal();
+        }
         configTaskQueue.submit(() -> {
             try {
                 ioTask.run();
@@ -642,18 +657,12 @@ public final class ZaFridaProjectManager {
                         if (!project.isDisposed()) {
                             errorConsumer.accept(t);
                         }
-                    }, ModalityState.nonModal());
+                    }, state);
                 }
                 return;
             }
             if (uiTask == null) {
                 return;
-            }
-            ModalityState state;
-            if (modality != null) {
-                state = modality;
-            } else {
-                state = ModalityState.nonModal();
             }
             ApplicationManager.getApplication().invokeLater(() -> {
                 if (!project.isDisposed()) {
